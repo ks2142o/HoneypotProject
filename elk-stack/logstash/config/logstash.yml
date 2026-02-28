@@ -1,0 +1,19 @@
+# =============================================================================
+# Logstash Main Settings
+# =============================================================================
+
+# Disable X-Pack monitoring (no licence needed)
+xpack.monitoring.enabled: false
+
+# Pipeline settings
+pipeline.workers: 1
+pipeline.batch.size: 125
+pipeline.batch.delay: 50
+
+# Log level
+log.level: info
+
+# HTTP API (used by /api/status healthcheck)
+http.enabled: true
+http.host: "0.0.0.0"
+http.port: 9600

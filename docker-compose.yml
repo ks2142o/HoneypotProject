@@ -1,0 +1,297 @@
+# ==============================================================================
+# HONEYPOT DEPLOYMENT - WSL2 + DOCKER COMPATIBLE
+# All configurable values are driven by .env — edit that file to tune
+# heap sizes, ports, timezone, credentials, etc.
+# Compose file format version field removed — obsolete in Compose v2+
+# ==============================================================================
+
+networks:
+  honeypot-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: ${SUBNET}
+
+volumes:
+  elasticsearch-data:
+    driver: local
+  cowrie-data:
+    driver: local
+  dionaea-data:
+    driver: local
+  logstash-data:
+    driver: local
+
+services:
+
+  # ============================================
+  # ELASTICSEARCH
+  # ============================================
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:${ELASTIC_VERSION}
+    container_name: elasticsearch
+    hostname: elasticsearch
+
+    environment:
+      - node.name=elasticsearch-node-1
+      - cluster.name=honeypot-cluster
+      - discovery.type=single-node
+      - network.host=0.0.0.0
+      - http.port=9200
+      - bootstrap.memory_lock=false
+      - ES_JAVA_OPTS=${ES_JAVA_OPTS}
+      - xpack.security.enabled=false
+      - xpack.security.enrollment.enabled=false
+      - TZ=${TZ}
+
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+
+    ports:
+      - "${ELASTICSEARCH_PORT}:9200"
+
+    networks:
+      - honeypot-network
+
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 15
+      start_period: 180s
+
+    restart: unless-stopped
+
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  # ============================================
+  # LOGSTASH
+  # ============================================
+  logstash:
+    image: docker.elastic.co/logstash/logstash:${ELASTIC_VERSION}
+    container_name: logstash
+    hostname: logstash
+
+    environment:
+      - LS_JAVA_OPTS=${LS_JAVA_OPTS}
+      - ELASTICSEARCH_HOSTS=${ELASTICSEARCH_HOSTS}
+      - xpack.monitoring.enabled=false
+      - pipeline.workers=1
+      - pipeline.batch.size=125
+      - TZ=${TZ}
+
+    volumes:
+      - ./elk-stack/logstash/pipeline:/usr/share/logstash/pipeline:ro
+      - ./elk-stack/logstash/config/logstash.yml:/usr/share/logstash/config/logstash.yml:ro
+      - ./logs:/var/log/honeypots:ro
+      - logstash-data:/usr/share/logstash/data
+
+    ports:
+      - "${LOGSTASH_BEATS_PORT}:5044"
+      - "${LOGSTASH_API_PORT}:9600"
+
+    networks:
+      - honeypot-network
+
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9600 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+    restart: unless-stopped
+
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # ============================================
+  # KIBANA
+  # ============================================
+  kibana:
+    image: docker.elastic.co/kibana/kibana:${ELASTIC_VERSION}
+    container_name: kibana
+    hostname: kibana
+
+    environment:
+      - SERVER_NAME=kibana
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=5601
+      - ELASTICSEARCH_HOSTS=${ELASTICSEARCH_HOSTS}
+      - XPACK_SECURITY_ENABLED=false
+      - XPACK_MONITORING_ENABLED=false
+      - TELEMETRY_ENABLED=false
+      - TELEMETRY_OPTIN=false
+      # Required in Kibana 8.8+ — prevents "encryption key not set" warnings
+      # and the savedObjects migration hang on first boot
+      - XPACK_ENCRYPTEDSAVEDOBJECTS_ENCRYPTIONKEY=honeypot_platform_enc_key_2026_min32
+      # Disable Fleet — it does heavy background initialisation that delays startup
+      - XPACK_FLEET_ENABLED=false
+      # Cap Node.js heap for low-RAM systems (WSL2 default is ~4GB)
+      - NODE_OPTIONS=--max-old-space-size=384
+      # Reduce log noise during startup
+      - LOGGING_ROOT_LEVEL=warn
+      - TZ=${TZ}
+
+    ports:
+      - "${KIBANA_PORT}:5601"
+
+    networks:
+      - honeypot-network
+
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+
+    restart: unless-stopped
+
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # ============================================
+  # COWRIE SSH / TELNET HONEYPOT
+  # ============================================
+  cowrie:
+    image: cowrie/cowrie:latest
+    container_name: cowrie-honeypot
+    hostname: srv01
+
+    environment:
+      - COWRIE_LOG_PATH=/cowrie/cowrie-git/var/log/cowrie
+      - COWRIE_OUTPUT=json
+      - TZ=${TZ}
+
+    volumes:
+      - cowrie-data:/cowrie/cowrie-git/var/log/cowrie
+      - ./logs/cowrie:/cowrie/cowrie-git/var/log/cowrie
+      - ./data/cowrie/downloads:/cowrie/cowrie-git/var/lib/cowrie/downloads
+
+    ports:
+      - "${COWRIE_SSH_PORT}:2222"
+      - "${COWRIE_TELNET_PORT}:2223"
+
+    networks:
+      - honeypot-network
+
+    restart: unless-stopped
+
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  # ============================================
+  # DIONAEA MULTI-PROTOCOL HONEYPOT
+  # ============================================
+  dionaea:
+    image: dinotools/dionaea:latest
+    container_name: dionaea-honeypot
+    hostname: dionaea
+
+    environment:
+      - TZ=${TZ}
+
+    volumes:
+      - dionaea-data:/opt/dionaea/var
+      - ./logs/dionaea:/opt/dionaea/var/log
+      - ./data/dionaea/binaries:/opt/dionaea/var/lib/dionaea/binaries
+
+    ports:
+      - "${DIONAEA_FTP_PORT}:21"
+      - "${DIONAEA_DAYTIME_PORT}:42"
+      - "${DIONAEA_RPC_PORT}:135"
+      - "${DIONAEA_HTTPS_PORT}:443"
+      - "${DIONAEA_SMB_PORT}:445"
+      - "${DIONAEA_MSSQL_PORT}:1433"
+      - "${DIONAEA_MYSQL_PORT}:3306"
+      - "${DIONAEA_SIP_PORT}:5060"
+      - "${DIONAEA_SIPS_PORT}:5061"
+
+    networks:
+      - honeypot-network
+
+    restart: unless-stopped
+
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # ============================================
+  # FLASK HTTP HONEYPOT
+  # ============================================
+  flask:
+    build:
+      context: ./honeypots/flask-honeypot
+      dockerfile: Dockerfile
+    container_name: flask-honeypot
+    hostname: webserver
+
+    environment:
+      - LOG_LEVEL=${LOG_LEVEL}
+      - TZ=${TZ}
+      - PYTHONUNBUFFERED=1
+
+    volumes:
+      - ./logs/flask:/app/logs
+
+    ports:
+      - "${FLASK_HTTP_PORT}:8080"
+
+    networks:
+      - honeypot-network
+
+    restart: unless-stopped
+
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  # ============================================
+  # WEB MANAGEMENT DASHBOARD
+  # ============================================
+  webapp:
+    build:
+      context: ./webapp
+      dockerfile: Dockerfile
+    image: honeypot/webapp:latest
+    # Never try to pull from Docker Hub — always build from local source
+    pull_policy: build
+    container_name: webapp
+    hostname: webapp
+
+    environment:
+      - FLASK_ENV=${FLASK_ENV}
+      - ELASTICSEARCH_URL=${ELASTICSEARCH_URL}
+      - LOG_LEVEL=${LOG_LEVEL}
+      - PYTHONUNBUFFERED=1
+      - TZ=${TZ}
+
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - .:/app/project:ro
+
+    ports:
+      - "${WEBAPP_PORT}:5000"
+
+    networks:
+      - honeypot-network
+
+    restart: unless-stopped
+
+    deploy:
+      resources:
+        limits:
+          memory: 256M

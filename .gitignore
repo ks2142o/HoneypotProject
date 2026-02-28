@@ -1,0 +1,142 @@
+# ==============================================================================
+# Honeypot Threat Intelligence Platform — .gitignore
+# ==============================================================================
+
+
+# ── Environment & Secrets ─────────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.crt
+secrets/
+
+
+# ── Honeypot Data (attack logs & captured malware) ────────────────────────────
+logs/
+data/
+backups/
+
+# Keep directory stubs so git tracks the structure
+!logs/.gitkeep
+!data/.gitkeep
+!backups/.gitkeep
+
+
+# ── Elasticsearch Data ────────────────────────────────────────────────────────
+elk-stack/elasticsearch/data/
+elk-stack/logstash/data/
+
+
+# ── GeoIP Database ───────────────────────────────────────────────────────────
+geoip/
+*.mmdb
+
+
+# ── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+.eggs/
+parts/
+var/
+sdist/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+.installed.cfg
+MANIFEST
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+.virtualenv/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+*.py,cover
+
+# Type checking
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+
+
+# ── Node / React (frontend) ──────────────────────────────────────────────────
+webapp/frontend/node_modules/
+webapp/frontend/dist/
+webapp/frontend/.vite/
+webapp/frontend/.eslintcache
+
+# npm / yarn / pnpm lockfiles (keep package-lock.json)
+# yarn.lock
+# pnpm-lock.yaml
+
+
+# ── Docker ────────────────────────────────────────────────────────────────────
+# Built images are not stored in git — rebuild with: make build
+webapp/static/
+
+
+# ── Deployment Logs ───────────────────────────────────────────────────────────
+deployment.log
+*.log
+
+
+# ── editors ───────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# JetBrains
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# VSCode
+.vscode/
+!.vscode/extensions.json
+
+
+# ── OS ────────────────────────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+
+# ── Temporary / Misc ─────────────────────────────────────────────────────────
+*.tmp
+*.temp
+*.bak
+*.orig
+*.rej
+.cache/
+tmp/
+temp/

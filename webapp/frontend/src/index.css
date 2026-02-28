@@ -1,0 +1,135 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    background-color: #0a0e1a;
+    color: #c9d1d9;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: #0f1629; }
+  ::-webkit-scrollbar-thumb { background: #1d2d55; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #2a4080; }
+}
+
+@layer components {
+  /* Card with top glow line */
+  .card {
+    @apply bg-cyber-card border border-cyber-border rounded-xl p-5 relative overflow-hidden shadow-cyber;
+  }
+  .card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(0,212,255,0.3), transparent);
+  }
+
+  /* Buttons */
+  .btn {
+    @apply inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium
+           transition-all duration-200 border cursor-pointer select-none;
+  }
+  .btn:hover  { @apply opacity-80 -translate-y-px; }
+  .btn:active { @apply translate-y-0; }
+  .btn:disabled { @apply opacity-40 cursor-not-allowed translate-y-0; }
+
+  .btn-primary { @apply bg-cyber-accent/10 text-cyber-accent border-cyber-accent/30 hover:bg-cyber-accent/20; }
+  .btn-success { @apply bg-cyber-green/10 text-cyber-green border-cyber-green/30 hover:bg-cyber-green/20; }
+  .btn-danger  { @apply bg-cyber-red/10   text-cyber-red   border-cyber-red/30   hover:bg-cyber-red/20;  }
+  .btn-warning { @apply bg-cyber-yellow/10 text-cyber-yellow border-cyber-yellow/30 hover:bg-cyber-yellow/20; }
+  .btn-ghost   { @apply bg-transparent text-cyber-muted border-cyber-border hover:border-cyber-accent/40 hover:text-cyber-accent; }
+
+  /* Status badges */
+  .badge { @apply inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium; }
+  .badge-running { @apply bg-cyber-green/15 text-cyber-green border border-cyber-green/30; }
+  .badge-stopped { @apply bg-cyber-red/15   text-cyber-red   border border-cyber-red/30;   }
+  .badge-unknown { @apply bg-cyber-yellow/15 text-cyber-yellow border border-cyber-yellow/30; }
+
+  /* Section title with gradient line */
+  .section-title {
+    @apply flex items-center gap-2.5 text-xs font-semibold tracking-widest uppercase text-cyber-accent mb-4;
+  }
+  .section-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, rgba(0,212,255,0.25), transparent);
+  }
+
+  /* Terminal / log output */
+  .terminal {
+    @apply bg-cyber-card2 border border-cyber-border rounded-lg p-3
+           font-mono text-xs text-cyber-green max-h-72 overflow-y-auto
+           whitespace-pre-wrap break-all leading-relaxed;
+  }
+
+  /* Input / Select */
+  .cyber-input {
+    @apply bg-cyber-card2 border border-cyber-border text-cyber-text rounded-lg
+           px-3 py-2 text-sm focus:outline-none focus:border-cyber-accent/60
+           focus:ring-1 focus:ring-cyber-accent/20 transition-colors;
+  }
+
+  /* Data table */
+  .data-table { @apply w-full text-sm border-collapse; }
+  .data-table th {
+    @apply bg-cyber-card2/80 text-cyber-muted font-medium uppercase text-xs
+           tracking-wider px-3 py-2.5 text-left sticky top-0 z-10;
+  }
+  .data-table td { @apply px-3 py-2 border-b border-cyber-border/50 text-cyber-text; }
+  .data-table tr:hover td { @apply bg-cyber-border/20; }
+
+  /* Stat card */
+  .stat-card {
+    @apply rounded-xl p-5 border border-cyber-border relative overflow-hidden
+           transition-all duration-200 cursor-default;
+    background: linear-gradient(135deg, #0f1629 0%, #162040 100%);
+  }
+  .stat-card:hover { @apply -translate-y-0.5 shadow-cyber-lg; }
+
+  /* Glow dots */
+  .dot-green { @apply w-2 h-2 rounded-full bg-cyber-green animate-pulse-slow; }
+  .dot-red   { @apply w-2 h-2 rounded-full bg-cyber-red; }
+  .dot-yellow { @apply w-2 h-2 rounded-full bg-cyber-yellow animate-pulse-slow; }
+}
+
+/* Leaflet dark theme */
+.leaflet-tile-pane {
+  filter: brightness(0.55) saturate(0.35) hue-rotate(195deg);
+}
+.leaflet-control-attribution {
+  background: rgba(6,8,16,0.8) !important;
+  color: #555 !important;
+  font-size: 9px !important;
+}
+.leaflet-control-zoom a {
+  background: #0f1629 !important;
+  color: #00d4ff !important;
+  border-color: #1d2d55 !important;
+}
+
+/* Chart tooltip override */
+.recharts-tooltip-wrapper .recharts-default-tooltip {
+  background: #0f1629 !important;
+  border: 1px solid #1d2d55 !important;
+  border-radius: 8px !important;
+  color: #c9d1d9 !important;
+}
+
+/* Number counter animation */
+@keyframes countUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.count-animate { animation: countUp 0.4s ease-out; }

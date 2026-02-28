@@ -1,0 +1,859 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Honeypot Threat Intelligence Dashboard</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+
+  <!-- Leaflet (world map) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- Font Awesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            cyber: {
+              900: '#0a0e1a',
+              800: '#0f1629',
+              700: '#162040',
+              600: '#1d2d55',
+              500: '#2a4080',
+              accent: '#00d4ff',
+              green: '#00ff9d',
+              red: '#ff4757',
+              yellow: '#ffd32a',
+              purple: '#a55eea',
+            }
+          },
+          fontFamily: {
+            mono: ['"JetBrains Mono"', '"Courier New"', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Inter:wght@300;400;500;600;700&display=swap');
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: #0a0e1a;
+      color: #c9d1d9;
+      min-height: 100vh;
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0f1629; }
+    ::-webkit-scrollbar-thumb { background: #2a4080; border-radius: 3px; }
+
+    /* Glowing borders */
+    .card {
+      background: #0f1629;
+      border: 1px solid #1d2d55;
+      border-radius: 12px;
+      padding: 1.25rem;
+      position: relative;
+      overflow: hidden;
+    }
+    .card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, #00d4ff44, transparent);
+    }
+    .card-glow { box-shadow: 0 0 20px #00d4ff11; }
+
+    /* Status badges */
+    .badge-running  { background: #00ff9d22; color: #00ff9d; border: 1px solid #00ff9d44; }
+    .badge-stopped  { background: #ff475722; color: #ff4757; border: 1px solid #ff475744; }
+    .badge-unknown  { background: #ffd32a22; color: #ffd32a; border: 1px solid #ffd32a44; }
+
+    /* Stat cards */
+    .stat-card {
+      background: linear-gradient(135deg, #0f1629 0%, #162040 100%);
+      border: 1px solid #1d2d55;
+      border-radius: 12px;
+      padding: 1.5rem;
+      position: relative;
+      overflow: hidden;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .stat-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 30px rgba(0, 212, 255, 0.1);
+    }
+    .stat-card .icon {
+      width: 48px; height: 48px;
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px;
+    }
+
+    /* Buttons */
+    .btn {
+      padding: 0.5rem 1.25rem;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      cursor: pointer;
+      border: none;
+      transition: all 0.2s;
+      display: inline-flex; align-items: center; gap: 6px;
+    }
+    .btn:hover { opacity: 0.85; transform: translateY(-1px); }
+    .btn:active { transform: translateY(0); }
+    .btn-primary  { background: #00d4ff22; color: #00d4ff; border: 1px solid #00d4ff44; }
+    .btn-success  { background: #00ff9d22; color: #00ff9d; border: 1px solid #00ff9d44; }
+    .btn-danger   { background: #ff475722; color: #ff4757; border: 1px solid #ff475744; }
+    .btn-warning  { background: #ffd32a22; color: #ffd32a; border: 1px solid #ffd32a44; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+    /* Map */
+    #world-map {
+      height: 380px;
+      border-radius: 10px;
+      background: #0f1629;
+    }
+
+    /* Log terminal */
+    .terminal {
+      background: #060810;
+      border: 1px solid #1d2d55;
+      border-radius: 8px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11.5px;
+      padding: 12px;
+      max-height: 280px;
+      overflow-y: auto;
+      color: #7ee787;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    /* Pulse animation for live indicator */
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+    .live-dot {
+      width: 8px; height: 8px;
+      background: #00ff9d;
+      border-radius: 50%;
+      animation: pulse-dot 1.5s ease-in-out infinite;
+    }
+
+    /* Table */
+    .attack-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .attack-table th {
+      background: #141e35;
+      color: #8b949e;
+      font-weight: 500;
+      text-transform: uppercase;
+      font-size: 11px;
+      letter-spacing: 0.05em;
+      padding: 10px 12px;
+      text-align: left;
+    }
+    .attack-table td {
+      padding: 8px 12px;
+      border-bottom: 1px solid #1d2d55;
+      color: #c9d1d9;
+    }
+    .attack-table tr:hover td { background: #0f1c33; }
+    .attack-table .ip  { color: #00d4ff; font-family: monospace; }
+    .attack-table .cmd { color: #a55eea; font-family: monospace; }
+    .attack-table .country { color: #ffd32a; }
+
+    /* Section headers */
+    .section-title {
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #00d4ff;
+      margin-bottom: 1rem;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .section-title::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: linear-gradient(90deg, #00d4ff33, transparent);
+    }
+
+    /* Spinner */
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner { animation: spin 1s linear infinite; }
+
+    /* Notifications */
+    #notifications {
+      position: fixed;
+      top: 1rem; right: 1rem;
+      z-index: 9999;
+      display: flex; flex-direction: column; gap: 8px;
+    }
+    .notif {
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      max-width: 320px;
+      animation: slideIn 0.3s ease;
+      display: flex; align-items: center; gap: 10px;
+    }
+    @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+    .notif-success { background: #00ff9d22; border: 1px solid #00ff9d44; color: #00ff9d; }
+    .notif-error   { background: #ff475722; border: 1px solid #ff475744; color: #ff4757; }
+    .notif-info    { background: #00d4ff22; border: 1px solid #00d4ff44; color: #00d4ff; }
+
+    /* Leaflet dark style override */
+    .leaflet-tile-pane { filter: brightness(0.6) saturate(0.4) hue-rotate(200deg); }
+    .leaflet-control-attribution { background: rgba(0,0,0,0.7) !important; color: #555 !important; }
+  </style>
+</head>
+
+<body>
+
+<!-- Notifications overlay -->
+<div id="notifications"></div>
+
+<!-- ═══════════════════════════════════════════════════ HEADER ═══ -->
+<header style="background: linear-gradient(90deg, #0a0e1a 0%, #162040 50%, #0a0e1a 100%); border-bottom: 1px solid #1d2d55;">
+  <div class="max-w-screen-2xl mx-auto px-4 py-3 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div style="width:40px; height:40px; background: #00d4ff22; border: 1px solid #00d4ff44; border-radius: 10px; display:flex; align-items:center; justify-content:center; font-size:20px;">
+        🛡️
+      </div>
+      <div>
+        <h1 style="font-size:1.1rem; font-weight:700; color:#e6edf3; letter-spacing:0.02em;">HONEYPOT THREAT INTELLIGENCE</h1>
+        <p style="font-size:0.7rem; color:#8b949e; font-family:monospace;">Automated Defence Platform v2.0</p>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-6">
+      <!-- Live indicator -->
+      <div class="flex items-center gap-2">
+        <div class="live-dot"></div>
+        <span style="font-size:0.75rem; color:#8b949e;">LIVE</span>
+      </div>
+
+      <!-- Health summary -->
+      <div id="health-bar" class="flex items-center gap-3 text-xs"></div>
+
+      <!-- Controls -->
+      <div class="flex gap-2">
+        <button class="btn btn-success" onclick="deployAll()"><i class="fas fa-rocket"></i> Deploy All</button>
+        <button class="btn btn-danger"  onclick="shutdownAll()"><i class="fas fa-stop-circle"></i> Shutdown</button>
+        <button class="btn btn-primary" onclick="refreshAll()"><i class="fas fa-sync-alt" id="refresh-icon"></i> Refresh</button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- ═══════════════════════════════════════════════════ MAIN LAYOUT ═══ -->
+<main class="max-w-screen-2xl mx-auto px-4 py-5 space-y-5">
+
+  <!-- ── Quick Stats Row ──────────────────────────────────────────────── -->
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-4" id="stats-row">
+    <div class="stat-card">
+      <div class="flex justify-between items-start">
+        <div>
+          <p style="font-size:0.7rem; color:#8b949e; text-transform:uppercase; letter-spacing:.08em;">Total Events</p>
+          <p id="stat-total" style="font-size:2rem; font-weight:700; color:#00d4ff; font-family:monospace;">—</p>
+        </div>
+        <div class="icon" style="background:#00d4ff22; color:#00d4ff;"><i class="fas fa-database"></i></div>
+      </div>
+      <p style="font-size:0.7rem; color:#8b949e; margin-top:8px;">Indexed in Elasticsearch</p>
+    </div>
+
+    <div class="stat-card">
+      <div class="flex justify-between items-start">
+        <div>
+          <p style="font-size:0.7rem; color:#8b949e; text-transform:uppercase; letter-spacing:.08em;">Running Services</p>
+          <p id="stat-services" style="font-size:2rem; font-weight:700; color:#00ff9d; font-family:monospace;">—</p>
+        </div>
+        <div class="icon" style="background:#00ff9d22; color:#00ff9d;"><i class="fas fa-server"></i></div>
+      </div>
+      <p style="font-size:0.7rem; color:#8b949e; margin-top:8px;">Docker containers active</p>
+    </div>
+
+    <div class="stat-card">
+      <div class="flex justify-between items-start">
+        <div>
+          <p style="font-size:0.7rem; color:#8b949e; text-transform:uppercase; letter-spacing:.08em;">Top Country</p>
+          <p id="stat-country" style="font-size:1.1rem; font-weight:700; color:#ffd32a; font-family:monospace; margin-top:6px;">—</p>
+        </div>
+        <div class="icon" style="background:#ffd32a22; color:#ffd32a;"><i class="fas fa-globe"></i></div>
+      </div>
+      <p style="font-size:0.7rem; color:#8b949e; margin-top:8px;">Most attack traffic</p>
+    </div>
+
+    <div class="stat-card">
+      <div class="flex justify-between items-start">
+        <div>
+          <p style="font-size:0.7rem; color:#8b949e; text-transform:uppercase; letter-spacing:.08em;">ES Indices</p>
+          <p id="stat-indices" style="font-size:2rem; font-weight:700; color:#a55eea; font-family:monospace;">—</p>
+        </div>
+        <div class="icon" style="background:#a55eea22; color:#a55eea;"><i class="fas fa-layer-group"></i></div>
+      </div>
+      <p style="font-size:0.7rem; color:#8b949e; margin-top:8px;">Honeypot indices</p>
+    </div>
+  </div>
+
+  <!-- ── Service Status + Deployment Controls ─────────────────────────── -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+
+    <!-- Service Status -->
+    <div class="lg:col-span-2 card card-glow">
+      <p class="section-title"><i class="fas fa-network-wired"></i> Service Status</p>
+      <div id="service-grid" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+        <!-- filled by JS -->
+      </div>
+    </div>
+
+    <!-- Quick Links + Deploy Controls -->
+    <div class="card space-y-4">
+      <p class="section-title"><i class="fas fa-tools"></i> Controls</p>
+
+      <div class="space-y-2">
+        <p style="font-size:0.7rem; color:#8b949e; text-transform:uppercase; letter-spacing:.08em; margin-bottom:6px;">Deploy Subset</p>
+        <button class="btn btn-primary w-full" onclick="deployELK()"><i class="fas fa-chart-bar"></i> Deploy ELK Stack</button>
+        <button class="btn btn-primary w-full" onclick="deployHoneypots()"><i class="fas fa-bug"></i> Deploy Honeypots</button>
+      </div>
+
+      <div class="space-y-2">
+        <p style="font-size:0.7rem; color:#8b949e; text-transform:uppercase; letter-spacing:.08em; margin-bottom:6px;">Quick Links</p>
+        <a href="http://localhost:5601" target="_blank" class="btn btn-warning w-full" style="text-decoration:none; justify-content:center;">
+          <i class="fas fa-chart-line"></i> Kibana Dashboard
+        </a>
+        <a href="http://localhost:9200/_cat/indices?v" target="_blank" class="btn btn-primary w-full" style="text-decoration:none; justify-content:center;">
+          <i class="fas fa-search"></i> Elasticsearch API
+        </a>
+      </div>
+
+      <div id="health-card" class="rounded-lg p-3" style="background:#060810; border:1px solid #1d2d55; font-size:12px; font-family:monospace;">
+        <p style="color:#8b949e; margin-bottom:8px;">System Health</p>
+        <div id="health-details" class="space-y-1"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── World Map ─────────────────────────────────────────────────────── -->
+  <div class="card card-glow">
+    <div class="flex justify-between items-center mb-3">
+      <p class="section-title" style="margin:0;"><i class="fas fa-map-marked-alt"></i> Attack Origins — World Map</p>
+      <button class="btn btn-primary" onclick="loadGeoPoints()"><i class="fas fa-crosshairs"></i> Refresh Map</button>
+    </div>
+    <div id="world-map"></div>
+    <p id="map-status" style="font-size:11px; color:#8b949e; margin-top:6px; text-align:right;">Loading geo data…</p>
+  </div>
+
+  <!-- ── Charts Row ────────────────────────────────────────────────────── -->
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+    <!-- Attack Timeline -->
+    <div class="card card-glow">
+      <p class="section-title"><i class="fas fa-chart-area"></i> Attack Timeline (24h)</p>
+      <canvas id="timeline-chart" height="180"></canvas>
+    </div>
+
+    <!-- Top Countries -->
+    <div class="card card-glow">
+      <p class="section-title"><i class="fas fa-flag"></i> Top Attack Countries</p>
+      <canvas id="country-chart" height="180"></canvas>
+    </div>
+  </div>
+
+  <!-- ── Credentials + Commands ─────────────────────────────────────────── -->
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+
+    <div class="card card-glow">
+      <p class="section-title"><i class="fas fa-user"></i> Top Usernames</p>
+      <canvas id="username-chart" height="200"></canvas>
+    </div>
+
+    <div class="card card-glow">
+      <p class="section-title"><i class="fas fa-key"></i> Top Passwords</p>
+      <canvas id="password-chart" height="200"></canvas>
+    </div>
+
+    <div class="card card-glow">
+      <p class="section-title"><i class="fas fa-terminal"></i> Top Commands</p>
+      <canvas id="command-chart" height="200"></canvas>
+    </div>
+  </div>
+
+  <!-- ── Recent Attacks Table ───────────────────────────────────────────── -->
+  <div class="card card-glow">
+    <div class="flex justify-between items-center mb-3">
+      <p class="section-title" style="margin:0;"><i class="fas fa-crosshairs"></i> Recent Attack Events</p>
+      <button class="btn btn-primary" onclick="loadRecentAttacks()"><i class="fas fa-sync-alt"></i> Refresh</button>
+    </div>
+    <div style="overflow-x:auto; max-height:340px; overflow-y:auto;">
+      <table class="attack-table">
+        <thead>
+          <tr>
+            <th>Timestamp</th>
+            <th>Source IP</th>
+            <th>Country</th>
+            <th>Honeypot</th>
+            <th>Event</th>
+            <th>User / Password / Command</th>
+          </tr>
+        </thead>
+        <tbody id="attacks-tbody">
+          <tr><td colspan="6" style="text-align:center; color:#8b949e; padding:24px;">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── Logs Viewer ───────────────────────────────────────────────────── -->
+  <div class="card card-glow">
+    <p class="section-title"><i class="fas fa-scroll"></i> Service Logs</p>
+    <div class="flex gap-3 mb-3 flex-wrap">
+      <select id="log-service" class="rounded-md px-3 py-2 text-sm" style="background:#060810; border:1px solid #1d2d55; color:#c9d1d9; min-width:180px;">
+        <option value="">Select service…</option>
+        <option value="elasticsearch">Elasticsearch</option>
+        <option value="logstash">Logstash</option>
+        <option value="kibana">Kibana</option>
+        <option value="cowrie">Cowrie (SSH)</option>
+        <option value="dionaea">Dionaea</option>
+        <option value="flask">Flask Honeypot</option>
+        <option value="webapp">Webapp</option>
+      </select>
+      <button class="btn btn-primary" onclick="showLogs()"><i class="fas fa-terminal"></i> Show Logs</button>
+      <button class="btn btn-warning" onclick="clearLogs()"><i class="fas fa-trash-alt"></i> Clear</button>
+    </div>
+    <div id="logs-container" class="terminal" style="display:none;"></div>
+  </div>
+
+</main>
+
+<!-- ═══════════════════════════════════════════════════ SCRIPTS ═══ -->
+<script>
+// ─── Chart instances ────────────────────────────────────────────────────────
+let timelineChart, countryChart, usernameChart, passwordChart, commandChart;
+let mapInstance, markerLayerGroup;
+
+// ─── Chart.js global defaults (dark theme) ─────────────────────────────────
+Chart.defaults.color = '#8b949e';
+Chart.defaults.borderColor = '#1d2d55';
+Chart.defaults.font.family = 'Inter';
+
+// ─── Notifications ──────────────────────────────────────────────────────────
+function notify(msg, type = 'info', duration = 4000) {
+  const icons = { success: 'fa-check-circle', error: 'fa-exclamation-circle', info: 'fa-info-circle' };
+  const el = document.createElement('div');
+  el.className = `notif notif-${type}`;
+  el.innerHTML = `<i class="fas ${icons[type]}"></i><span>${msg}</span>`;
+  document.getElementById('notifications').appendChild(el);
+  setTimeout(() => el.remove(), duration);
+}
+
+// ─── Generic fetch helper ───────────────────────────────────────────────────
+async function apiFetch(url, options = {}) {
+  const res = await fetch(url, options);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error || res.statusText);
+  }
+  return res.json();
+}
+
+// ─── Refresh everything ─────────────────────────────────────────────────────
+async function refreshAll() {
+  const icon = document.getElementById('refresh-icon');
+  icon.classList.add('spinner');
+  await Promise.allSettled([
+    loadStatus(),
+    loadStats(),
+    loadTimeline(),
+    loadCountries(),
+    loadCredentials(),
+    loadCommands(),
+    loadRecentAttacks(),
+    loadHealth(),
+    loadGeoPoints(),
+  ]);
+  icon.classList.remove('spinner');
+}
+
+// ─── Service status ─────────────────────────────────────────────────────────
+async function loadStatus() {
+  try {
+    const data = await apiFetch('/api/status');
+    const grid = document.getElementById('service-grid');
+    grid.innerHTML = '';
+
+    let running = 0;
+    for (const [svc, info] of Object.entries(data)) {
+      if (info.status === 'running') running++;
+      const cls = info.status === 'running' ? 'badge-running' : info.status === 'not running' ? 'badge-stopped' : 'badge-unknown';
+      const dot = info.status === 'running' ? '#00ff9d' : '#ff4757';
+
+      const card = document.createElement('div');
+      card.style = 'background:#060810; border:1px solid #1d2d55; border-radius:8px; padding:12px; cursor:pointer;';
+      card.innerHTML = `
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
+          <span style="font-weight:600; font-size:13px; color:#e6edf3;">${svc.toUpperCase()}</span>
+          <span style="width:8px; height:8px; background:${dot}; border-radius:50%;"></span>
+        </div>
+        <span class="badge-pill ${cls}" style="font-size:10px; border-radius:4px; padding:2px 7px;">${info.status}</span>
+        ${info.health && info.health !== 'none' && info.health !== 'unknown' ? `<p style='font-size:10px; color:#8b949e; margin-top:5px;'>health: ${info.health}</p>` : ''}
+        <button onclick="deployService('${svc}', event)" style="margin-top:8px; width:100%; font-size:10px; background:#00d4ff11; border:1px solid #00d4ff33; color:#00d4ff; border-radius:4px; padding:3px; cursor:pointer;">
+          ${info.status === 'running' ? 'Restart' : 'Start'}
+        </button>
+      `;
+      grid.appendChild(card);
+    }
+    document.getElementById('stat-services').textContent = running + ' / ' + Object.keys(data).length;
+  } catch(e) {
+    console.warn('Status error:', e);
+  }
+}
+
+// ─── Stats ─────────────────────────────────────────────────────────────────
+async function loadStats() {
+  try {
+    const d = await apiFetch('/api/stats');
+    document.getElementById('stat-total').textContent   = d.total_docs?.toLocaleString() ?? '—';
+    document.getElementById('stat-indices').textContent = d.indices ?? '—';
+  } catch(e) { /* ES not ready */ }
+}
+
+// ─── Health ─────────────────────────────────────────────────────────────────
+async function loadHealth() {
+  try {
+    const h = await apiFetch('/api/health');
+    const bar  = document.getElementById('health-bar');
+    const det  = document.getElementById('health-details');
+
+    const items = [
+      { name: 'Docker',  val: h.docker },
+      { name: 'ES',      val: h.elasticsearch },
+    ];
+    bar.innerHTML = items.map(i => {
+      const ok = i.val === 'healthy' || i.val === 'green' || i.val === 'yellow';
+      return `<span style="font-size:11px; color:${ok?'#00ff9d':'#ff4757'};">
+                <i class="fas fa-circle" style="font-size:6px;"></i> ${i.name}
+              </span>`;
+    }).join('');
+
+    det.innerHTML = Object.entries(h)
+      .map(([k, v]) => {
+        const ok = ['healthy','green','yellow'].includes(v);
+        const color = ok ? '#00ff9d' : (v === 'unknown' || v === 'unreachable' ? '#ffd32a' : '#ff4757');
+        return `<div style="display:flex; justify-content:space-between;">
+          <span style="color:#8b949e;">${k}</span>
+          <span style="color:${color};">${v}</span>
+        </div>`;
+      }).join('');
+  } catch(e) {}
+}
+
+// ─── World Map ──────────────────────────────────────────────────────────────
+function initMap() {
+  if (mapInstance) return;
+  mapInstance = L.map('world-map', {
+    center: [20, 0], zoom: 2, minZoom: 1, maxZoom: 8,
+    zoomControl: true,
+  });
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap',
+    maxZoom: 18,
+  }).addTo(mapInstance);
+  markerLayerGroup = L.layerGroup().addTo(mapInstance);
+}
+
+async function loadGeoPoints() {
+  initMap();
+  const status = document.getElementById('map-status');
+  status.textContent = 'Loading…';
+  try {
+    const data = await apiFetch('/api/attacks/geo-points');
+    markerLayerGroup.clearLayers();
+
+    const typeColors = {
+      'cowrie-ssh': '#00d4ff',
+      'flask-http': '#00ff9d',
+      'dionaea':    '#ff4757',
+    };
+
+    data.points.forEach(p => {
+      const color = typeColors[p.type] || '#a55eea';
+      const circle = L.circleMarker([p.lat, p.lon], {
+        radius: 5, color, fillColor: color, fillOpacity: 0.7, weight: 1,
+      });
+      circle.bindPopup(`
+        <b style="color:#000;">${p.ip}</b><br>
+        Country: ${p.country}<br>
+        Honeypot: ${p.type}
+      `);
+      markerLayerGroup.addLayer(circle);
+    });
+
+    status.textContent = `${data.points.length} attack origin${data.points.length !== 1 ? 's' : ''} plotted`;
+  } catch(e) {
+    status.textContent = 'GeoIP data unavailable (waiting for attack data)';
+  }
+}
+
+// ─── Timeline Chart ─────────────────────────────────────────────────────────
+async function loadTimeline() {
+  try {
+    const data = await apiFetch('/api/attacks/timeline');
+    const buckets = data.timeline || [];
+    const labels  = buckets.map(b => new Date(b.key_as_string || b.key).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}));
+    const values  = buckets.map(b => b.doc_count);
+
+    if (timelineChart) timelineChart.destroy();
+    timelineChart = new Chart(document.getElementById('timeline-chart'), {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          label: 'Attacks',
+          data: values,
+          borderColor: '#00d4ff',
+          backgroundColor: 'rgba(0,212,255,0.08)',
+          fill: true,
+          tension: 0.4,
+          pointRadius: 3,
+          pointBackgroundColor: '#00d4ff',
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { grid: { color: '#1d2d55' }, ticks: { maxRotation: 0 } },
+          y: { grid: { color: '#1d2d55' }, beginAtZero: true },
+        }
+      }
+    });
+  } catch(e) {
+    renderEmptyChart('timeline-chart', 'Attack Timeline — No data yet', '#00d4ff');
+  }
+}
+
+// ─── Country Chart ──────────────────────────────────────────────────────────
+async function loadCountries() {
+  try {
+    const data = await apiFetch('/api/attacks/by-country');
+    const buckets = (data.by_country || []).slice(0, 12);
+    if (buckets.length > 0) {
+      document.getElementById('stat-country').textContent = buckets[0].key;
+    }
+    renderHBarChart('country-chart', buckets, '#ffd32a');
+  } catch(e) {
+    renderEmptyChart('country-chart', 'Countries — No data yet', '#ffd32a');
+  }
+}
+
+// ─── Credentials ────────────────────────────────────────────────────────────
+async function loadCredentials() {
+  try {
+    const data = await apiFetch('/api/attacks/top-credentials');
+    renderHBarChart('username-chart', (data.top_usernames || []).slice(0,10), '#00d4ff');
+    renderHBarChart('password-chart', (data.top_passwords || []).slice(0,10), '#ff4757');
+  } catch(e) {
+    renderEmptyChart('username-chart', 'Usernames — No data yet', '#00d4ff');
+    renderEmptyChart('password-chart', 'Passwords — No data yet', '#ff4757');
+  }
+}
+
+// ─── Commands ───────────────────────────────────────────────────────────────
+async function loadCommands() {
+  try {
+    const data = await apiFetch('/api/attacks/top-commands');
+    renderHBarChart('command-chart', (data.top_commands || []).slice(0,10), '#a55eea');
+  } catch(e) {
+    renderEmptyChart('command-chart', 'Commands — No data yet', '#a55eea');
+  }
+}
+
+// ─── Chart helpers ──────────────────────────────────────────────────────────
+function renderHBarChart(canvasId, buckets, color) {
+  const ctx = document.getElementById(canvasId);
+  if (!ctx) return;
+  const existing = Chart.getChart(ctx);
+  if (existing) existing.destroy();
+
+  const labels = buckets.map(b => b.key?.length > 20 ? b.key.slice(0, 20) + '…' : (b.key || '(empty)'));
+  const values = buckets.map(b => b.doc_count);
+
+  new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        data: values,
+        backgroundColor: color + '44',
+        borderColor: color,
+        borderWidth: 1,
+        borderRadius: 3,
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { color: '#1d2d55' }, beginAtZero: true },
+        y: { grid: { display: false }, ticks: { font: { family: 'monospace', size: 11 } } },
+      }
+    }
+  });
+}
+
+function renderEmptyChart(canvasId, label, color) {
+  const ctx = document.getElementById(canvasId);
+  if (!ctx) return;
+  const existing = Chart.getChart(ctx);
+  if (existing) existing.destroy();
+  renderHBarChart(canvasId, [{ key: label, doc_count: 0 }], color);
+}
+
+// ─── Recent attacks table ───────────────────────────────────────────────────
+async function loadRecentAttacks() {
+  try {
+    const data = await apiFetch('/api/attacks/recent');
+    const tbody = document.getElementById('attacks-tbody');
+    if (!data.attacks || data.attacks.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:#8b949e; padding:24px;">No attack events yet — waiting for traffic…</td></tr>';
+      return;
+    }
+    tbody.innerHTML = data.attacks.map(a => {
+      const ts  = a['@timestamp'] ? new Date(a['@timestamp']).toLocaleString() : '—';
+      const ip  = a.src_ip || '—';
+      const cc  = (a.geoip || {}).country_name || '—';
+      const hp  = a.honeypot_type || '—';
+      const ev  = a.event_type || '—';
+      const det = [a.username, a.password, a.input].filter(Boolean).join(' / ') || '—';
+      return `<tr>
+        <td style="color:#8b949e; white-space:nowrap;">${ts}</td>
+        <td class="ip">${ip}</td>
+        <td class="country">${cc}</td>
+        <td style="color:#00ff9d;">${hp}</td>
+        <td style="color:#ffd32a;">${ev}</td>
+        <td class="cmd">${escapeHtml(det)}</td>
+      </tr>`;
+    }).join('');
+  } catch(e) {
+    document.getElementById('attacks-tbody').innerHTML =
+      '<tr><td colspan="6" style="text-align:center; color:#ff4757; padding:16px;">ES unavailable — waiting for data</td></tr>';
+  }
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ─── Log viewer ─────────────────────────────────────────────────────────────
+async function showLogs() {
+  const svc = document.getElementById('log-service').value;
+  if (!svc) { notify('Select a service first', 'error'); return; }
+  const container = document.getElementById('logs-container');
+  container.style.display = 'block';
+  container.textContent = `Loading logs for ${svc}…`;
+  try {
+    const data = await apiFetch(`/api/logs/${svc}`);
+    container.textContent = data.logs || '(no logs available)';
+    container.scrollTop = container.scrollHeight;
+  } catch(e) {
+    container.textContent = `Error: ${e.message}`;
+  }
+}
+
+function clearLogs() {
+  const c = document.getElementById('logs-container');
+  c.textContent = '';
+  c.style.display = 'none';
+}
+
+// ─── Deployment actions ──────────────────────────────────────────────────────
+async function deployAll() {
+  if (!confirm('Deploy ALL services? This will start the full ELK + honeypot stack.')) return;
+  notify('Full deployment started — this may take several minutes…', 'info', 15000);
+  try {
+    const data = await apiFetch('/api/deploy/all', { method: 'POST' });
+    notify(data.message || 'Deployment triggered', 'success');
+    setTimeout(refreshAll, 8000);
+  } catch(e) { notify('Deploy failed: ' + e.message, 'error'); }
+}
+
+async function deployELK() {
+  if (!confirm('Deploy ELK stack (Elasticsearch, Logstash, Kibana)?')) return;
+  notify('Deploying ELK stack…', 'info');
+  try {
+    await apiFetch('/api/deploy/elasticsearch', { method: 'POST' });
+    await apiFetch('/api/deploy/logstash', { method: 'POST' });
+    await apiFetch('/api/deploy/kibana', { method: 'POST' });
+    notify('ELK stack deployment started', 'success');
+    setTimeout(refreshAll, 5000);
+  } catch(e) { notify('ELK deploy failed: ' + e.message, 'error'); }
+}
+
+async function deployHoneypots() {
+  if (!confirm('Deploy honeypots (Cowrie, Dionaea, Flask)?')) return;
+  notify('Deploying honeypots…', 'info');
+  try {
+    await apiFetch('/api/deploy/cowrie',  { method: 'POST' });
+    await apiFetch('/api/deploy/dionaea', { method: 'POST' });
+    await apiFetch('/api/deploy/flask',   { method: 'POST' });
+    notify('Honeypots deployed', 'success');
+    setTimeout(loadStatus, 3000);
+  } catch(e) { notify('Honeypot deploy failed: ' + e.message, 'error'); }
+}
+
+async function deployService(svc, ev) {
+  ev.stopPropagation();
+  try {
+    const data = await apiFetch(`/api/deploy/${svc}`, { method: 'POST' });
+    notify(data.message || `${svc} started`, 'success');
+    setTimeout(loadStatus, 2000);
+  } catch(e) { notify(`${svc}: ${e.message}`, 'error'); }
+}
+
+async function shutdownAll() {
+  if (!confirm('WARNING: This will stop ALL services. Confirm?')) return;
+  try {
+    const data = await apiFetch('/api/shutdown', { method: 'POST' });
+    notify(data.message || 'All services stopped', 'success');
+    setTimeout(loadStatus, 2000);
+  } catch(e) { notify('Shutdown failed: ' + e.message, 'error'); }
+}
+
+// ─── Bootstrap ──────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  refreshAll();
+  // Auto-refresh analytics every 30 s, status every 10 s
+  setInterval(loadStatus, 10000);
+  setInterval(() => {
+    loadStats();
+    loadTimeline();
+    loadCountries();
+    loadRecentAttacks();
+  }, 30000);
+});
+</script>
+
+</body>
+</html>
