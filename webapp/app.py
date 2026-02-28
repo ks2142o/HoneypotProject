@@ -116,20 +116,20 @@ def deploy_service(service):
 
 @app.route('/api/deploy/all', methods=['POST'])
 def deploy_all():
-    """Run full deployment via deploy.py (non-interactive, --force skips prompts)."""
+    """Start any stopped services without recreating already-running ones."""
     try:
         result = subprocess.run(
-            ['python3', 'deploy.py', '--mode=full', '--force'],
+            COMPOSE_CMD + ['up', '-d'],
             cwd=PROJECT_PATH,
             capture_output=True,
             text=True,
-            timeout=600,
+            timeout=300,
         )
         if result.returncode == 0:
-            return jsonify({'success': True, 'message': 'Full deployment started'})
+            return jsonify({'success': True, 'message': 'All services started'})
         return jsonify({'success': False, 'error': result.stderr or result.stdout}), 500
     except subprocess.TimeoutExpired:
-        return jsonify({'success': False, 'error': 'Deployment timed out'}), 504
+        return jsonify({'success': False, 'error': 'Timed out after 5 minutes'}), 504
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 

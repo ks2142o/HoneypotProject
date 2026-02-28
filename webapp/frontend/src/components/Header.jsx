@@ -53,9 +53,9 @@ export default function Header({ health, isRefreshing, onRefresh, onDeployAll, o
           <div className="flex items-center gap-2">
             <button
               className="btn btn-success"
-              onClick={() => { if (window.confirm('Deploy ALL services?')) onDeployAll() }}
+              onClick={() => { if (window.confirm('Start all stopped services?')) onDeployAll() }}
             >
-              <Rocket size={14} /> Deploy All
+              <Rocket size={14} /> Start Services
             </button>
 
             <button

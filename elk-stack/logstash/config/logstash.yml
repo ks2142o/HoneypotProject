@@ -5,15 +5,22 @@
 # Disable X-Pack monitoring (no licence needed)
 xpack.monitoring.enabled: false
 
+# ── GeoIP database ────────────────────────────────────────────────────────────
+# In Logstash 8.7+ the geoip filter tries to auto-download a commercial
+# database from Elastic's network.  Disabling the downloader forces it to use
+# the GeoLite2 database bundled inside the logstash-filter-geoip gem.
+# This works fully offline and on any cloud VM without a licence.
+xpack.geoip.downloader.enabled: false
+
 # Pipeline settings
 pipeline.workers: 1
 pipeline.batch.size: 125
 pipeline.batch.delay: 50
 
-# Log level
-log.level: info
+# Log level — warn reduces noise; set to info for troubleshooting
+log.level: warn
 
-# HTTP API (used by /api/status healthcheck)
+# HTTP API (used by health-check and make health)
 http.enabled: true
 http.host: "0.0.0.0"
 http.port: 9600

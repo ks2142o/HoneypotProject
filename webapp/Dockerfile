@@ -23,8 +23,22 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# System deps (curl for healthchecks, docker CLI for socket comms)
-RUN apt-get update && apt-get install -y --no-install-recommends curl \
+# Install Docker CLI + Compose plugin from the official Docker apt repository.
+# Uses download.docker.com (plain HTTPS, no Docker Hub account/credentials needed)
+# so this step works even when Docker Hub auth is unavailable in WSL2.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl gnupg \
+    && install -m 0755 -d /etc/apt/keyrings \
+    && curl -fsSL https://download.docker.com/linux/debian/gpg \
+       | gpg --dearmor -o /etc/apt/keyrings/docker.gpg \
+    && chmod a+r /etc/apt/keyrings/docker.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
+             https://download.docker.com/linux/debian bookworm stable" \
+       > /etc/apt/sources.list.d/docker.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+         docker-ce-cli \
+         docker-compose-plugin \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

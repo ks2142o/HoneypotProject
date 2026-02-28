@@ -65,11 +65,11 @@ export default function App() {
 
   /* ── action handlers ─────────────────────────────────────── */
   const handleDeployAll = async () => {
-    notify('Full deployment started — this may take several minutes…', 'info')
+    notify('Starting all stopped services…', 'info')
     try {
       await api.deployAll()
-      notify('Deployment triggered successfully', 'success')
-      setTimeout(refreshAll, 8000)
+      notify('Services started successfully', 'success')
+      setTimeout(refreshAll, 5000)
     } catch (e) { notify(`Deploy failed: ${e.message}`, 'error') }
   }
 
@@ -79,30 +79,6 @@ export default function App() {
       notify(`${svc} started`, 'success')
       setTimeout(loadStatus, 2000)
     } catch (e) { notify(`${svc}: ${e.message}`, 'error') }
-  }
-
-  const handleDeployELK = async () => {
-    notify('Deploying ELK stack…', 'info')
-    try {
-      await api.deployService('elasticsearch')
-      await api.deployService('logstash')
-      await api.deployService('kibana')
-      notify('ELK stack deployment started', 'success')
-      setTimeout(refreshAll, 5000)
-    } catch (e) { notify(`ELK deploy failed: ${e.message}`, 'error') }
-  }
-
-  const handleDeployHoneypots = async () => {
-    notify('Deploying honeypots…', 'info')
-    try {
-      await Promise.all([
-        api.deployService('cowrie'),
-        api.deployService('dionaea'),
-        api.deployService('flask'),
-      ])
-      notify('Honeypots deployed', 'success')
-      setTimeout(loadStatus, 3000)
-    } catch (e) { notify(`Honeypot deploy failed: ${e.message}`, 'error') }
   }
 
   const handleShutdown = async () => {
@@ -152,8 +128,7 @@ export default function App() {
           </div>
           <ControlPanel
             health={health}
-            onDeployELK={handleDeployELK}
-            onDeployHoneypots={handleDeployHoneypots}
+            onDeployAll={handleDeployAll}
           />
         </div>
 

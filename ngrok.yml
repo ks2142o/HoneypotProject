@@ -1,0 +1,30 @@
+# ==============================================================================
+# ngrok Tunnel Configuration — Honeypot Platform
+#
+# Exposes the Flask HTTP honeypot to the internet so real attack traffic flows in.
+# ngrok injects X-Forwarded-For with the real attacker IP — the Flask honeypot
+# reads this header so all HTTP events are GeoIP-enriched and appear on the map.
+#
+# NOTE: TCP tunnels (e.g. Cowrie SSH) require adding a card to your ngrok
+# account (ERR_NGROK_8013). HTTP tunnels work on all free accounts with no card.
+#
+# REQUIRES: NGROK_AUTHTOKEN in .env
+#   Sign up free at https://dashboard.ngrok.com → Your Authtoken section
+#
+# Start tunnel:  make expose
+# View URL:      make tunnel-status
+# Stop tunnel:   make stop-expose
+# ==============================================================================
+
+version: "3"
+
+# authtoken is passed via --authtoken CLI flag at runtime (from .env)
+# so this file is secret-free and safe to commit to git.
+
+tunnels:
+
+  # HTTP tunnel → Flask honeypot
+  # ngrok adds X-Forwarded-For with the real attacker IP.
+  flask-http:
+    addr: flask:8080
+    proto: http

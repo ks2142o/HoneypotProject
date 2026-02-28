@@ -130,6 +130,39 @@ vm-fix: ## Set vm.max_map_count=262144 required by Elasticsearch (WSL2/Linux)
 	   $(call ok, vm.max_map_count already $$current — no change needed); \
 	 fi
 
+.PHONY: cloud-setup
+cloud-setup: ## Prepare a cloud VM (Oracle/AWS/GCP) for deployment — run once after first SSH
+	$(call log, Running cloud VM pre-deployment setup…)
+	@echo ""
+	@# 1. Persist vm.max_map_count across reboots (required for Elasticsearch)
+	@if ! grep -q "vm.max_map_count" /etc/sysctl.conf /etc/sysctl.d/*.conf 2>/dev/null; then \
+	  echo "vm.max_map_count=262144" | sudo tee /etc/sysctl.d/99-elasticsearch.conf > /dev/null; \
+	  $(call ok, vm.max_map_count persisted to /etc/sysctl.d/99-elasticsearch.conf); \
+	else \
+	  $(call ok, vm.max_map_count already configured in sysctl); \
+	fi
+	@sudo sysctl -w vm.max_map_count=262144 > /dev/null
+	@# 2. Create .env from example if missing
+	@if [ ! -f "$(ENV_FILE)" ]; then \
+	  cp .env.example .env; \
+	  $(call warn, .env created from .env.example — update passwords before deploying!); \
+	else \
+	  $(call ok, .env already exists); \
+	fi
+	@# 3. Create required directory tree
+	@mkdir -p logs/cowrie logs/dionaea logs/flask data/cowrie/downloads data/dionaea/binaries backups
+	@$(call ok, Directory structure ready)
+	@echo ""
+	@printf "$(BOLD)$(GREEN)Cloud setup complete.$(RESET)\n"
+	@printf "Next steps:\n"
+	@printf "  1. Edit .env  — set strong passwords\n"
+	@printf "  2. Adjust ES_JAVA_OPTS / LS_JAVA_OPTS to match your VM RAM:\n"
+	@printf "       8 GB  →  ES=-Xms1g -Xmx1g    LS=-Xms512m -Xmx512m\n"
+	@printf "       16 GB →  ES=-Xms2g -Xmx2g    LS=-Xms1g   -Xmx1g\n"
+	@printf "       24 GB →  ES=-Xms4g -Xmx4g    LS=-Xms2g   -Xmx2g\n"
+	@printf "  3. Open firewall ports: 2222 2223 $(FLASK_HTTP_PORT) $(WEBAPP_PORT)\n"
+	@printf "  4. Run: make deploy\n\n"
+
 .PHONY: env
 env: ## Create .env file from template if it does not exist
 	$(call log, Checking environment file…)
@@ -220,6 +253,40 @@ deploy-webapp: build-webapp ## Build and deploy the management webapp only
 	$(call log, Deploying webapp…)
 	@$(DOCKER_COMPOSE) -f $(COMPOSE_FILE) up -d webapp
 	@$(call ok, Webapp deployed at http://localhost:5000)
+
+.PHONY: expose
+expose: ## Start ngrok tunnels to expose honeypots to the internet (requires NGROK_AUTHTOKEN in .env)
+	$(call log, Starting ngrok tunnels…)
+	@if ! grep -q "^NGROK_AUTHTOKEN=.\+" $(ENV_FILE) 2>/dev/null; then \
+	  echo ""; \
+	  echo "  ✗ NGROK_AUTHTOKEN is not set in .env"; \
+	  echo ""; \
+	  echo "  1. Sign up free at https://dashboard.ngrok.com"; \
+	  echo "  2. Copy your authtoken from: Dashboard → Your Authtoken"; \
+	  echo "  3. Add it to .env:  NGROK_AUTHTOKEN=<your_token>"; \
+	  echo "  4. Re-run: make expose"; \
+	  echo ""; \
+	  exit 1; \
+	fi
+	@$(DOCKER_COMPOSE) -f $(COMPOSE_FILE) --profile expose up -d ngrok
+	@$(call ok, ngrok tunnels started — run 'make tunnel-status' to see public URLs)
+
+.PHONY: tunnel-status
+tunnel-status: ## Show active ngrok tunnel URLs (public internet addresses)
+	$(call log, Fetching ngrok tunnel info…)
+	@result=$$(curl -sf http://localhost:4040/api/tunnels 2>/dev/null); \
+	  if [ -z "$$result" ]; then \
+	    echo "  ngrok is not running — start with: make expose"; \
+	  else \
+	    echo "$$result" | python3 -c \
+	      "import sys,json; t=json.load(sys.stdin).get('tunnels',[]); [print(f'  {x[\"name\"]:<20} {x[\"public_url\"]}') for x in t] if t else print('  No tunnels open yet')"; \
+	  fi
+
+.PHONY: stop-expose
+stop-expose: ## Stop ngrok tunnels only (honeypots keep running)
+	$(call log, Stopping ngrok tunnels…)
+	@$(DOCKER_COMPOSE) -f $(COMPOSE_FILE) --profile expose stop ngrok
+	@$(call ok, Tunnels stopped)
 
 .PHONY: start-%
 start-%: ## Start a specific service: make start-elasticsearch

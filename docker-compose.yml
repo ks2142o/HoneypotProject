@@ -1,8 +1,10 @@
 # ==============================================================================
-# HONEYPOT DEPLOYMENT - WSL2 + DOCKER COMPATIBLE
-# All configurable values are driven by .env — edit that file to tune
-# heap sizes, ports, timezone, credentials, etc.
-# Compose file format version field removed — obsolete in Compose v2+
+# HONEYPOT DEPLOYMENT — WSL2 + Cloud Compatible
+# All configurable values are driven by .env
+# Adjust ES_JAVA_OPTS / LS_JAVA_OPTS in .env to match your system RAM:
+#   4 GB  → ES=-Xms512m -Xmx512m   LS=-Xms256m -Xmx256m
+#   8 GB  → ES=-Xms1g   -Xmx1g     LS=-Xms512m -Xmx512m
+#   16 GB → ES=-Xms2g   -Xmx2g     LS=-Xms1g   -Xmx1g
 # ==============================================================================
 
 networks:
@@ -14,8 +16,6 @@ networks:
 
 volumes:
   elasticsearch-data:
-    driver: local
-  cowrie-data:
     driver: local
   dionaea-data:
     driver: local
@@ -47,8 +47,10 @@ services:
     volumes:
       - elasticsearch-data:/usr/share/elasticsearch/data
 
+    # Bind to 127.0.0.1 — accessible from the host but not from the internet.
+    # Container-to-container traffic uses Docker DNS (http://elasticsearch:9200).
     ports:
-      - "${ELASTICSEARCH_PORT}:9200"
+      - "127.0.0.1:${ELASTICSEARCH_PORT}:9200"
 
     networks:
       - honeypot-network
@@ -65,7 +67,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1G
+          memory: 2G
 
   # ============================================
   # LOGSTASH
@@ -78,20 +80,28 @@ services:
     environment:
       - LS_JAVA_OPTS=${LS_JAVA_OPTS}
       - ELASTICSEARCH_HOSTS=${ELASTICSEARCH_HOSTS}
+      - TZ=${TZ}
+      # All logstash.yml settings passed as env vars — avoids single-file
+      # bind-mount failures on WSL2 / Docker Desktop ("not a directory" error).
       - xpack.monitoring.enabled=false
+      - xpack.geoip.downloader.enabled=false
       - pipeline.workers=1
       - pipeline.batch.size=125
-      - TZ=${TZ}
+      - pipeline.batch.delay=50
+      - log.level=warn
+      - http.enabled=true
+      - http.host=0.0.0.0
+      - http.port=9600
 
     volumes:
       - ./elk-stack/logstash/pipeline:/usr/share/logstash/pipeline:ro
-      - ./elk-stack/logstash/config/logstash.yml:/usr/share/logstash/config/logstash.yml:ro
       - ./logs:/var/log/honeypots:ro
       - logstash-data:/usr/share/logstash/data
 
+    # Beats input and API bound to localhost only — not internet-facing
     ports:
-      - "${LOGSTASH_BEATS_PORT}:5044"
-      - "${LOGSTASH_API_PORT}:9600"
+      - "127.0.0.1:${LOGSTASH_BEATS_PORT}:5044"
+      - "127.0.0.1:${LOGSTASH_API_PORT}:9600"
 
     networks:
       - honeypot-network
@@ -112,7 +122,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 512M
+          memory: 1G
 
   # ============================================
   # KIBANA
@@ -131,19 +141,18 @@ services:
       - XPACK_MONITORING_ENABLED=false
       - TELEMETRY_ENABLED=false
       - TELEMETRY_OPTIN=false
-      # Required in Kibana 8.8+ — prevents "encryption key not set" warnings
-      # and the savedObjects migration hang on first boot
+      # Required in Kibana 8.8+ — prevents savedObjects migration hang on first boot
       - XPACK_ENCRYPTEDSAVEDOBJECTS_ENCRYPTIONKEY=honeypot_platform_enc_key_2026_min32
-      # Disable Fleet — it does heavy background initialisation that delays startup
+      # Disable Fleet — heavy background initialisation that delays startup
       - XPACK_FLEET_ENABLED=false
-      # Cap Node.js heap for low-RAM systems (WSL2 default is ~4GB)
-      - NODE_OPTIONS=--max-old-space-size=384
-      # Reduce log noise during startup
+      # Node.js heap cap — increase proportionally if you have more RAM
+      - NODE_OPTIONS=--max-old-space-size=512
       - LOGGING_ROOT_LEVEL=warn
       - TZ=${TZ}
 
+    # Localhost-only — SSH-tunnel or webapp proxy for remote access
     ports:
-      - "${KIBANA_PORT}:5601"
+      - "127.0.0.1:${KIBANA_PORT}:5601"
 
     networks:
       - honeypot-network
@@ -157,7 +166,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 512M
+          memory: 1G
 
   # ============================================
   # COWRIE SSH / TELNET HONEYPOT
@@ -173,10 +182,13 @@ services:
       - TZ=${TZ}
 
     volumes:
-      - cowrie-data:/cowrie/cowrie-git/var/log/cowrie
+      # Single bind-mount so logs land in ./logs/cowrie/ for Logstash to read.
+      # (A second named-volume mount to the same path was removed — it shadowed
+      # the bind mount and prevented Logstash from seeing the log files.)
       - ./logs/cowrie:/cowrie/cowrie-git/var/log/cowrie
       - ./data/cowrie/downloads:/cowrie/cowrie-git/var/lib/cowrie/downloads
 
+    # Honeypot ports must be publicly accessible — keep binding to 0.0.0.0
     ports:
       - "${COWRIE_SSH_PORT}:2222"
       - "${COWRIE_TELNET_PORT}:2223"
@@ -207,6 +219,7 @@ services:
       - ./logs/dionaea:/opt/dionaea/var/log
       - ./data/dionaea/binaries:/opt/dionaea/var/lib/dionaea/binaries
 
+    # Honeypot ports — publicly accessible
     ports:
       - "${DIONAEA_FTP_PORT}:21"
       - "${DIONAEA_DAYTIME_PORT}:42"
@@ -246,6 +259,7 @@ services:
     volumes:
       - ./logs/flask:/app/logs
 
+    # Honeypot port — publicly accessible
     ports:
       - "${FLASK_HTTP_PORT}:8080"
 
@@ -267,7 +281,6 @@ services:
       context: ./webapp
       dockerfile: Dockerfile
     image: honeypot/webapp:latest
-    # Never try to pull from Docker Hub — always build from local source
     pull_policy: build
     container_name: webapp
     hostname: webapp
@@ -278,11 +291,15 @@ services:
       - LOG_LEVEL=${LOG_LEVEL}
       - PYTHONUNBUFFERED=1
       - TZ=${TZ}
+      # Must match the host project name so 'docker compose up' from inside the
+      # container joins the existing stack instead of creating a new network.
+      - COMPOSE_PROJECT_NAME=honeypot-project
 
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/run/docker.sock:/var/run/docker.sock
       - .:/app/project:ro
 
+    # Dashboard is publicly accessible (restrict with firewall on cloud)
     ports:
       - "${WEBAPP_PORT}:5000"
 
@@ -295,3 +312,43 @@ services:
       resources:
         limits:
           memory: 256M
+
+  # ============================================
+  # NGROK — INTERNET EXPOSURE (optional, WSL2 only)
+  # Only starts when the "expose" profile is active.
+  #   make expose            → start tunnels
+  #   make tunnel-status     → show public URLs
+  #
+  # NOT needed on a cloud VPS (direct public IP).
+  # Requires NGROK_AUTHTOKEN in .env
+  # ============================================
+  ngrok:
+    image: ngrok/ngrok:latest
+    container_name: ngrok-tunnel
+    profiles: ["expose"]
+    restart: unless-stopped
+
+    environment:
+      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN:-}
+
+    command: >
+      start --all
+      --config /etc/ngrok.yml
+      --authtoken ${NGROK_AUTHTOKEN:-}
+
+    volumes:
+      - ./ngrok.yml:/etc/ngrok.yml:ro
+
+    ports:
+      - "127.0.0.1:4040:4040"   # ngrok web inspector — localhost only
+
+    networks:
+      - honeypot-network
+
+    depends_on:
+      - flask
+
+    deploy:
+      resources:
+        limits:
+          memory: 128M
