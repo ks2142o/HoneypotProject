@@ -151,6 +151,7 @@ cloud-setup: ## Prepare a cloud VM (Oracle/AWS/GCP) for deployment — run once 
 	fi
 	@# 3. Create required directory tree
 	@mkdir -p logs/cowrie logs/dionaea logs/flask data/cowrie/downloads data/dionaea/binaries backups
+	@chmod 777 logs/cowrie
 	@$(call ok, Directory structure ready)
 	@echo ""
 	@printf "$(BOLD)$(GREEN)Cloud setup complete.$(RESET)\n"
@@ -183,6 +184,7 @@ dirs: ## Create required log and data directory tree
 	           elk-stack/kibana/config \
 	           honeypots/cowrie honeypots/dionaea \
 	           dashboards scripts backups
+	@chmod 777 logs/cowrie
 	@$(call ok, Directory structure ready)
 
 .PHONY: setup
