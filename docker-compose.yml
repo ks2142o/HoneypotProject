@@ -218,6 +218,11 @@ services:
       - dionaea-data:/opt/dionaea/var
       - ./logs/dionaea:/opt/dionaea/var/log
       - ./data/dionaea/binaries:/opt/dionaea/var/lib/dionaea/binaries
+      - ./honeypots/dionaea/entrypoint.sh:/opt/dionaea/entrypoint.sh:ro
+
+    # Custom entrypoint that ensures all data directories exist before Dionaea starts.
+    # This fixes the issue where bind mounts shadow the named volume initialization.
+    entrypoint: /opt/dionaea/entrypoint.sh
 
     # Honeypot ports — publicly accessible
     ports:
