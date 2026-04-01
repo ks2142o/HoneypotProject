@@ -10,20 +10,28 @@ function AttackAdminPanel() {
   const [eventFilter, setEventFilter] = useState('');
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [autoRefresh, setAutoRefresh] = useState(true);
   const PER_PAGE = 50;
 
   useEffect(() => {
     loadAttacks();
   }, [page, honeypotFilter, eventFilter]);
 
+  useEffect(() => {
+    if (!autoRefresh) return undefined;
+    const interval = setInterval(() => {
+      loadAttacks();
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [autoRefresh, page, honeypotFilter, eventFilter]);
+
   const loadAttacks = async () => {
     setLoading(true);
     setError('');
     try {
-      // Use the existing API but with admin access
-      const data = await api.recentAttacks();
-      let allAttacks = Array.isArray(data?.attacks) ? data.attacks : [];
-      if (allAttacks.length === 0 && Array.isArray(data)) {
+      // Use the existing API but with admin access. Use /all to get complete set.
+      const data = await api.allAttacks();
+      let allAttacks = Array.isArray(data?.attacks) ? data.attacks : [];      if (allAttacks.length === 0 && Array.isArray(data)) {
         // fallback if endpoint returns plain array
         allAttacks = data;
       }

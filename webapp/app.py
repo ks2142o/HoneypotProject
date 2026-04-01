@@ -878,6 +878,17 @@ def delete_attack(attack_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/attacks/all')
+@login_required
+def get_all_attacks():
+    """Return all saved attacks from SQLite as a single bulk list."""
+    try:
+        attacks = get_attacks_from_db(limit=10000)
+        return jsonify({'attacks': attacks, 'count': len(attacks), 'source': 'sqlite'})
+    except Exception as e:
+        return jsonify({'attacks': [], 'count': 0, 'error': str(e)}), 500
+
+
 @app.route('/api/attacks/top-credentials')
 @login_required
 def get_top_credentials():

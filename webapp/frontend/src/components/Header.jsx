@@ -46,7 +46,7 @@ export default function Header({ user, isAdmin, health, isRefreshing, onRefresh,
           {/* Global access indicator */}
           <div className="hidden sm:flex items-center gap-1.5 text-xs font-mono text-cyber-muted">
             <span className="px-2 py-0.5 border border-cyber-border rounded">Public</span>
-            <span className="px-2 py-0.5 border border-cyber-border rounded">Network: 10.250.0.0/16</span>
+            <span className="px-2 py-0.5 border border-cyber-border rounded">Network: 10.200.0.0/16</span>
           </div>
 
           {/* Component health — hidden on mobile */}
