@@ -150,7 +150,7 @@ cloud-setup: ## Prepare a cloud VM (Oracle/AWS/GCP) for deployment — run once 
 	  $(call ok, .env already exists); \
 	fi
 	@# 3. Create required directory tree
-	@mkdir -p logs/cowrie logs/dionaea logs/flask data/cowrie/downloads data/dionaea/binaries backups
+	@mkdir -p logs/cowrie logs/dionaea logs/flask data/cowrie/downloads data/dionaea/binaries data/webapp backups
 	@chmod 777 logs/cowrie
 	@$(call ok, Directory structure ready)
 	@echo ""
@@ -178,7 +178,7 @@ env: ## Create .env file from template if it does not exist
 dirs: ## Create required log and data directory tree
 	$(call log, Creating directory structure…)
 	@mkdir -p logs/cowrie logs/dionaea logs/flask \
-	           data/cowrie/downloads data/dionaea/binaries data/elasticsearch \
+\t           data/cowrie/downloads data/dionaea/binaries data/elasticsearch data/webapp \
 	           elk-stack/elasticsearch/config \
 	           elk-stack/logstash/config elk-stack/logstash/pipeline \
 	           elk-stack/kibana/config \
@@ -458,11 +458,12 @@ purge-images: purge ## DESTRUCTIVE: purge + remove all built images
 # ==============================================================================
 
 .PHONY: test
-test: ## Run all system tests (health, ES connectivity, honeypot ports)
+ test: ## Run all system tests (health, ES connectivity, honeypot ports, auth)
 	$(call log, Running system test suite…)
 	@$(MAKE) --no-print-directory test-health
 	@$(MAKE) --no-print-directory test-ports
 	@$(MAKE) --no-print-directory test-es
+	@$(MAKE) --no-print-directory test-auth
 	@$(call ok, All tests completed — review output above)
 
 .PHONY: test-health
@@ -478,11 +479,31 @@ test-health: ## Test HTTP health endpoints
 	   fi; \
 	 }; \
 	 check "Webapp /api/health"       "http://localhost:$(WEBAPP_PORT)/api/health"; \
-	 check "Webapp /api/status"       "http://localhost:$(WEBAPP_PORT)/api/status"; \
+	 check "Webapp /api/auth/me"      "http://localhost:$(WEBAPP_PORT)/api/auth/me"; \
 	 check "Elasticsearch /_cluster"  "http://localhost:$(ELASTICSEARCH_PORT)/_cluster/health"; \
 	 check "Kibana /api/status"       "http://localhost:$(KIBANA_PORT)/api/status"; \
 	 check "Flask Honeypot /health"   "http://localhost:$(FLASK_HTTP_PORT)/health"; \
 	 printf "\n  Results: $(GREEN)$$passed passed$(RESET), $(RED)$$failed failed$(RESET)\n"
+
+.PHONY: test-auth
+test-auth: ## Test basic authentication (login + /api/auth/me)
+	$(call log, Auth endpoint tests…)
+	@ADMIN_USERNAME=$$(grep -E '^ADMIN_USERNAME=' $(ENV_FILE) 2>/dev/null | cut -d= -f2 | tr -d ' \t' || echo 'admin'); \
+	ADMIN_PASSWORD=$$(grep -E '^ADMIN_PASSWORD=' $(ENV_FILE) 2>/dev/null | cut -d= -f2 | tr -d ' \t' || echo 'admin'); \
+	payload=$$(python3 -c "import json, os; print(json.dumps({'username': os.environ['ADMIN_USERNAME'], 'password': os.environ['ADMIN_PASSWORD']}))"); \
+	printf "  Testing login……"; \
+	login=$$(curl -sf -c /tmp/honeypot-cookies.txt -X POST "http://localhost:$(WEBAPP_PORT)/api/auth/login" -H "Content-Type: application/json" -d "$$payload" 2>/dev/null); \
+	if echo "$$login" | grep -q '"user"'; then \
+	  printf "$(GREEN)PASS$(RESET)\n"; \
+	  printf "  Testing /api/auth/me……"; \
+	  if curl -sf -b /tmp/honeypot-cookies.txt "http://localhost:$(WEBAPP_PORT)/api/auth/me" > /dev/null 2>&1; then \
+	    printf "$(GREEN)PASS$(RESET)\n"; \
+	  else \
+	    printf "$(RED)FAIL$(RESET)\n"; \
+	  fi; \
+	else \
+	  printf "$(RED)FAIL$(RESET)\n"; \
+	fi
 
 .PHONY: test-ports
 test-ports: ## Verify all expected TCP ports are listening

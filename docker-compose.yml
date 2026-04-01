@@ -292,10 +292,17 @@ services:
 
     environment:
       - FLASK_ENV=${FLASK_ENV}
+      - FLASK_SECRET_KEY=${FLASK_SECRET_KEY}
+      - FLASK_DEBUG=${FLASK_DEBUG}
       - ELASTICSEARCH_URL=${ELASTICSEARCH_URL}
       - LOG_LEVEL=${LOG_LEVEL}
       - PYTHONUNBUFFERED=1
       - TZ=${TZ}
+      - WEBAPP_DB_PATH=/app/data/users.db
+      # Auth credentials
+      - ADMIN_USERNAME=${ADMIN_USERNAME}
+      - ADMIN_EMAIL=${ADMIN_EMAIL}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
       # Must match the host project name so 'docker compose up' from inside the
       # container joins the existing stack instead of creating a new network.
       - COMPOSE_PROJECT_NAME=honeypot-project
@@ -303,6 +310,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - .:/app/project:ro
+      - ./data/webapp:/app/data
 
     # Dashboard is publicly accessible (restrict with firewall on cloud)
     ports:

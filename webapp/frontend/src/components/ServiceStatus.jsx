@@ -10,7 +10,7 @@ const SERVICE_META = {
   webapp:        { label: 'Dashboard',     icon: Monitor,   group: 'other'    },
 }
 
-function ServiceCard({ name, info, onDeploy }) {
+function ServiceCard({ name, info, onDeploy, isAdmin }) {
   const running  = info.status === 'running'
   const meta     = SERVICE_META[name] ?? { label: name, icon: Box, group: 'other' }
   const Icon     = meta.icon
@@ -67,12 +67,16 @@ function ServiceCard({ name, info, onDeploy }) {
 
       {/* Action button — pinned to bottom of card */}
       <button
+        disabled={!isAdmin}
         className={`mt-auto pt-3 w-full text-[11px] py-1.5 rounded-lg border
                     transition-all duration-200 flex items-center justify-center gap-1.5
-                    ${running
+                    ${!isAdmin
+                      ? 'bg-gray-700/20 border-gray-600/20 text-gray-500 cursor-not-allowed'
+                      : running
                       ? 'bg-cyber-accent/5 border-cyber-accent/20 text-cyber-accent hover:bg-cyber-accent/10'
                       : 'bg-cyber-green/5 border-cyber-green/20 text-cyber-green hover:bg-cyber-green/10'}`}
-        onClick={() => onDeploy(name)}
+        onClick={() => isAdmin && onDeploy(name)}
+        title={isAdmin ? undefined : 'Admin only'}
       >
         {running ? <RotateCcw size={11} /> : <Play size={11} />}
         {running ? 'Restart' : 'Start'}
@@ -81,7 +85,7 @@ function ServiceCard({ name, info, onDeploy }) {
   )
 }
 
-export default function ServiceStatus({ status, onDeploy }) {
+export default function ServiceStatus({ status, onDeploy, isAdmin }) {
   const entries = Object.entries(status)
 
   return (
@@ -100,7 +104,7 @@ export default function ServiceStatus({ status, onDeploy }) {
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
           {entries.map(([name, info]) => (
-            <ServiceCard key={name} name={name} info={info} onDeploy={onDeploy} />
+            <ServiceCard key={name} name={name} info={info} onDeploy={onDeploy} isAdmin={isAdmin} />
           ))}
         </div>
       )}

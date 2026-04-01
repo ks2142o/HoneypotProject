@@ -7,7 +7,7 @@ const HEALTH_COLOR = (v) => {
   return 'text-cyber-red'
 }
 
-export default function ControlPanel({ health, onDeployAll }) {
+export default function ControlPanel({ health, onDeployAll, isAdmin }) {
   const host      = window.location.hostname
   const kibanaUrl = `http://${host}:5601`
 
@@ -22,14 +22,20 @@ export default function ControlPanel({ health, onDeployAll }) {
         <p className="text-[10px] font-semibold tracking-widest uppercase text-cyber-muted">
           Service Control
         </p>
-        <button
-          className="btn btn-success w-full justify-center"
-          onClick={() => {
-            if (window.confirm('Start all stopped services?')) onDeployAll()
-          }}
-        >
-          <Play size={14} /> Start All Services
-        </button>
+        {!isAdmin ? (
+          <div className="bg-gray-700/20 border border-gray-600/20 rounded p-3">
+            <p className="text-xs text-gray-400">Admin only: Service control disabled</p>
+          </div>
+        ) : (
+          <button
+            className="btn btn-success w-full justify-center"
+            onClick={() => {
+              if (window.confirm('Start all stopped services?')) onDeployAll()
+            }}
+          >
+            <Play size={14} /> Start All Services
+          </button>
+        )}
       </div>
 
       {/* ── External links ────────────────────────────────────── */}

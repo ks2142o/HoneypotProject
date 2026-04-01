@@ -1,4 +1,4 @@
-import { RefreshCw, Shield, Rocket, StopCircle } from 'lucide-react'
+import { RefreshCw, Shield, Rocket, StopCircle, LogOut } from 'lucide-react'
 
 const HealthDot = ({ label, value }) => {
   const ok = ['healthy', 'green', 'yellow'].includes(String(value).toLowerCase())
@@ -10,7 +10,7 @@ const HealthDot = ({ label, value }) => {
   )
 }
 
-export default function Header({ health, isRefreshing, onRefresh, onDeployAll, onShutdown }) {
+export default function Header({ user, isAdmin, health, isRefreshing, onRefresh, onDeployAll, onShutdown, onLogout }) {
   return (
     <header
       className="sticky top-0 z-50 border-b border-cyber-border/60 backdrop-blur-md"
@@ -49,25 +49,48 @@ export default function Header({ health, isRefreshing, onRefresh, onDeployAll, o
             <HealthDot label="ES"     value={health.elasticsearch ?? '…'} />
           </div>
 
+          {/* User info and auth */}
+          <div className="flex items-center gap-1.5 sm:gap-2 border-l border-cyber-border pl-2 sm:pl-4">
+            {user && (
+              <div className="flex items-center gap-2">
+                <div className="text-xs sm:text-sm text-cyber-muted hidden sm:block">
+                  <div className="font-semibold text-cyber-bright">{user.username}</div>
+                  <div className="text-[10px] font-mono">{isAdmin ? 'Admin' : 'User'}</div>
+                </div>
+                <button
+                  className="btn btn-ghost px-2 sm:px-3"
+                  onClick={onLogout}
+                  title="Logout"
+                >
+                  <LogOut size={14} />
+                </button>
+              </div>
+            )}
+          </div>
+
           {/* Actions */}
           <div className="flex items-center gap-1.5 sm:gap-2">
-            <button
-              className="btn btn-success px-2.5 sm:px-4"
-              onClick={() => { if (window.confirm('Start all stopped services?')) onDeployAll() }}
-              title="Start all stopped services"
-            >
-              <Rocket size={14} />
-              <span className="hidden sm:inline">Start Services</span>
-            </button>
+            {isAdmin && (
+              <>
+                <button
+                  className="btn btn-success px-2.5 sm:px-4"
+                  onClick={() => { if (window.confirm('Start all stopped services?')) onDeployAll() }}
+                  title="Start all stopped services (admin only)"
+                >
+                  <Rocket size={14} />
+                  <span className="hidden sm:inline">Start</span>
+                </button>
 
-            <button
-              className="btn btn-danger px-2.5 sm:px-4"
-              onClick={() => { if (window.confirm('Stop ALL services? Confirm?')) onShutdown() }}
-              title="Shutdown all services"
-            >
-              <StopCircle size={14} />
-              <span className="hidden sm:inline">Shutdown</span>
-            </button>
+                <button
+                  className="btn btn-danger px-2.5 sm:px-4"
+                  onClick={() => { if (window.confirm('Stop ALL services? Confirm?')) onShutdown() }}
+                  title="Shutdown all services (admin only)"
+                >
+                  <StopCircle size={14} />
+                  <span className="hidden sm:inline">Shutdown</span>
+                </button>
+              </>
+            )}
 
             <button
               className="btn btn-ghost px-2.5 sm:px-4"

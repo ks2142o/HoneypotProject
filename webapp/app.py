@@ -1,18 +1,36 @@
 #!/usr/bin/env python3
 """
-Honeypot Deployment Dashboard - Flask Backend
-Serves the React SPA from ./static/ and exposes all /api/* routes.
+Honeypot Deployment Dashboard - Flask Backend with Authentication
+Serves the React SPA from ./static/ and exposes all /api/* routes with role-based access control.
 """
 
 import requests
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory, session
 import docker
 import subprocess
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
+import sqlite3
+import secrets
+from functools import wraps
+from werkzeug.security import generate_password_hash, check_password_hash
+
+# Configuration
+FLASK_ENV = os.environ.get('FLASK_ENV', 'development')
+IS_PROD = FLASK_ENV == 'production'
+FLASK_DEBUG = os.environ.get('FLASK_DEBUG', '0') == '1'
 
 # static_folder='static' → Flask serves built React bundle
 app = Flask(__name__, static_folder='static', static_url_path='')
+app.config['SECRET_KEY'] = os.environ.get('FLASK_SECRET_KEY', secrets.token_hex(32))
+app.config['SESSION_COOKIE_SECURE'] = IS_PROD
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
+
+# Database configuration
+DB_PATH = os.environ.get('WEBAPP_DB_PATH', '/app/data/users.db')
+os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
 
 try:
     docker_client = docker.from_env()
@@ -20,6 +38,101 @@ except Exception:
     docker_client = None
 
 PROJECT_PATH = "/app/project"
+
+
+# ─────────────────────────────────────────
+# Database Initialization
+# ─────────────────────────────────────────
+
+def get_db():
+    """Get a database connection."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def init_db():
+    """Create users table if it doesn't exist."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            email TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            role TEXT DEFAULT 'user',
+            is_active BOOLEAN DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+
+def bootstrap_admin():
+    """Ensure at least one admin exists; create from env if needed."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM users WHERE role='admin' AND is_active=1")
+    if cursor.fetchone() is None:
+        admin_username = os.environ.get('ADMIN_USERNAME')
+        admin_email = os.environ.get('ADMIN_EMAIL')
+        admin_password = os.environ.get('ADMIN_PASSWORD')
+        
+        if admin_username and admin_email and admin_password:
+            password_hash = generate_password_hash(admin_password)
+            try:
+                cursor.execute('''
+                    INSERT INTO users (username, email, password_hash, role)
+                    VALUES (?, ?, ?, 'admin')
+                ''', (admin_username, admin_email, password_hash))
+                conn.commit()
+            except sqlite3.IntegrityError:
+                pass
+    conn.close()
+
+
+# Initialize database on startup
+init_db()
+bootstrap_admin()
+
+
+# ─────────────────────────────────────────
+# Auth Decorators
+# ─────────────────────────────────────────
+
+def login_required(f):
+    """Decorator to require login for a route."""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            return jsonify({'error': 'Unauthorized'}), 401
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+def admin_required(f):
+    """Decorator to require admin role for a route."""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session or session.get('role') != 'admin':
+            return jsonify({'error': 'Forbidden'}), 403
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+def get_current_user():
+    """Get the current user from the session."""
+    if 'user_id' not in session:
+        return None
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM users WHERE id=? AND is_active=1', (session['user_id'],))
+    user = cursor.fetchone()
+    conn.close()
+    return user
 
 
 def _detect_compose_cmd() -> list:
@@ -62,10 +175,266 @@ def serve_spa(path):
 
 
 # ─────────────────────────────────────────
+# Authentication Endpoints
+# ─────────────────────────────────────────
+
+@app.route('/api/auth/register', methods=['POST'])
+def register():
+    """Register a new user."""
+    data = request.get_json() or {}
+    username = data.get('username', '').strip()
+    email = data.get('email', '').strip()
+    password = data.get('password', '').strip()
+    
+    if not username or len(username) < 3:
+        return jsonify({'error': 'Username must be at least 3 characters'}), 400
+    if not email or '@' not in email:
+        return jsonify({'error': 'Valid email required'}), 400
+    if not password or len(password) < 8:
+        return jsonify({'error': 'Password must be at least 8 characters'}), 400
+    
+    password_hash = generate_password_hash(password)
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute('''
+            INSERT INTO users (username, email, password_hash, role)
+            VALUES (?, ?, ?, 'user')
+        ''', (username, email, password_hash))
+        conn.commit()
+        conn.close()
+        return jsonify({'message': 'User registered successfully'}), 201
+    except sqlite3.IntegrityError:
+        conn.close()
+        return jsonify({'error': 'Username or email already exists'}), 400
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/auth/login', methods=['POST'])
+def login():
+    """Login with username or email."""
+    data = request.get_json() or {}
+    username_or_email = data.get('username', '').strip()
+    password = data.get('password', '').strip()
+    
+    if not username_or_email or not password:
+        return jsonify({'error': 'Username/email and password required'}), 400
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT id, username, email, password_hash, role FROM users
+        WHERE (username=? OR email=?) AND is_active=1
+    ''', (username_or_email, username_or_email))
+    user = cursor.fetchone()
+    conn.close()
+    
+    if not user or not check_password_hash(user['password_hash'], password):
+        return jsonify({'error': 'Invalid credentials'}), 401
+    
+    session.permanent = True
+    session['user_id'] = user['id']
+    session['username'] = user['username']
+    session['role'] = user['role']
+    
+    return jsonify({
+        'message': 'Logged in successfully',
+        'user': {
+            'id': user['id'],
+            'username': user['username'],
+            'email': user['email'],
+            'role': user['role'],
+        }
+    }), 200
+
+
+@app.route('/api/auth/logout', methods=['POST'])
+def logout():
+    """Logout the current user."""
+    session.clear()
+    return jsonify({'message': 'Logged out successfully'}), 200
+
+
+@app.route('/api/auth/me', methods=['GET'])
+@login_required
+def get_me():
+    """Get current user info."""
+    user = get_current_user()
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+    
+    return jsonify({
+        'id': user['id'],
+        'username': user['username'],
+        'email': user['email'],
+        'role': user['role'],
+    }), 200
+
+
+# ─────────────────────────────────────────
+# Admin User Management Endpoints
+# ─────────────────────────────────────────
+
+@app.route('/api/admin/users', methods=['GET'])
+@admin_required
+def list_users():
+    """List all users (admin only)."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT id, username, email, role, is_active, created_at FROM users')
+    users = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return jsonify({'users': users}), 200
+
+
+@app.route('/api/admin/users', methods=['POST'])
+@admin_required
+def create_user():
+    """Create a new user (admin only)."""
+    data = request.get_json() or {}
+    username = data.get('username', '').strip()
+    email = data.get('email', '').strip()
+    password = data.get('password', '').strip()
+    role = data.get('role', 'user')
+    
+    if role not in ['admin', 'user']:
+        role = 'user'
+    
+    if not username or len(username) < 3:
+        return jsonify({'error': 'Username must be at least 3 characters'}), 400
+    if not email or '@' not in email:
+        return jsonify({'error': 'Valid email required'}), 400
+    if not password or len(password) < 8:
+        return jsonify({'error': 'Password must be at least 8 characters'}), 400
+    
+    password_hash = generate_password_hash(password)
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute('''
+            INSERT INTO users (username, email, password_hash, role)
+            VALUES (?, ?, ?, ?)
+        ''', (username, email, password_hash, role))
+        conn.commit()
+        user_id = cursor.lastrowid
+        conn.close()
+        return jsonify({
+            'message': 'User created',
+            'user': {'id': user_id, 'username': username, 'email': email, 'role': role}
+        }), 201
+    except sqlite3.IntegrityError:
+        conn.close()
+        return jsonify({'error': 'Username or email already exists'}), 400
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/admin/users/<int:user_id>', methods=['PUT'])
+@admin_required
+def update_user(user_id):
+    """Update a user (admin only)."""
+    data = request.get_json() or {}
+    username = data.get('username', '').strip()
+    email = data.get('email', '').strip()
+    role = data.get('role', '').strip()
+    is_active = data.get('is_active')
+    password = data.get('password', '').strip()
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT id, role FROM users WHERE id=?', (user_id,))
+    user = cursor.fetchone()
+    if not user:
+        conn.close()
+        return jsonify({'error': 'User not found'}), 404
+    
+    # Prevent demoting sole active admin
+    if role and role != user['role'] and role != 'admin':
+        cursor.execute("SELECT COUNT(*) as count FROM users WHERE role='admin' AND is_active=1")
+        if cursor.fetchone()['count'] <= 1 and user['role'] == 'admin':
+            conn.close()
+            return jsonify({'error': 'Cannot demote sole active admin'}), 400
+    
+    updates = []
+    params = []
+    if username:
+        updates.append('username=?')
+        params.append(username)
+    if email:
+        updates.append('email=?')
+        params.append(email)
+    if role:
+        updates.append('role=?')
+        params.append(role)
+    if is_active is not None:
+        updates.append('is_active=?')
+        params.append(1 if is_active else 0)
+    if password:
+        updates.append('password_hash=?')
+        params.append(generate_password_hash(password))
+    
+    if not updates:
+        conn.close()
+        return jsonify({'error': 'No fields to update'}), 400
+    
+    updates.append('updated_at=CURRENT_TIMESTAMP')
+    params.append(user_id)
+    
+    try:
+        cursor.execute(f"UPDATE users SET {', '.join(updates)} WHERE id=?", params)
+        conn.commit()
+        conn.close()
+        return jsonify({'message': 'User updated'}), 200
+    except sqlite3.IntegrityError:
+        conn.close()
+        return jsonify({'error': 'Username or email already exists'}), 400
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/admin/users/<int:user_id>', methods=['DELETE'])
+@admin_required
+def delete_user(user_id):
+    """Delete a user (admin only)."""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT role FROM users WHERE id=?', (user_id,))
+    user = cursor.fetchone()
+    if not user:
+        conn.close()
+        return jsonify({'error': 'User not found'}), 404
+    
+    # Prevent deleting sole active admin
+    if user['role'] == 'admin':
+        cursor.execute("SELECT COUNT(*) as count FROM users WHERE role='admin' AND is_active=1")
+        if cursor.fetchone()['count'] <= 1:
+            conn.close()
+            return jsonify({'error': 'Cannot delete sole active admin'}), 400
+    
+    try:
+        cursor.execute('DELETE FROM users WHERE id=?', (user_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({'message': 'User deleted'}), 200
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': str(e)}), 500
+
+
+# ─────────────────────────────────────────
 # Container Status
 # ─────────────────────────────────────────
 
 @app.route('/api/status')
+@login_required
 def get_status():
     """Return running status for every managed container."""
     containers = {}
@@ -93,6 +462,7 @@ def get_status():
 # ─────────────────────────────────────────
 
 @app.route('/api/deploy/<service>', methods=['POST'])
+@admin_required
 def deploy_service(service):
     """Start a single service via docker-compose."""
     if service not in CONTAINER_NAMES:
@@ -115,6 +485,7 @@ def deploy_service(service):
 
 
 @app.route('/api/deploy/all', methods=['POST'])
+@admin_required
 def deploy_all():
     """Start any stopped services without recreating already-running ones."""
     try:
@@ -135,6 +506,7 @@ def deploy_all():
 
 
 @app.route('/api/shutdown', methods=['POST'])
+@admin_required
 def shutdown():
     """Stop all services."""
     try:
@@ -157,6 +529,7 @@ def shutdown():
 # ─────────────────────────────────────────
 
 @app.route('/api/logs/<service>')
+@login_required
 def get_logs(service):
     """Return last 200 log lines for a container."""
     if service not in CONTAINER_NAMES:
@@ -174,6 +547,7 @@ def get_logs(service):
 # ─────────────────────────────────────────
 
 @app.route('/api/stats')
+@login_required
 def get_stats():
     """High-level Elasticsearch index stats."""
     try:
@@ -197,6 +571,7 @@ def get_stats():
 # ─────────────────────────────────────────
 
 @app.route('/api/attacks/recent')
+@login_required
 def get_recent_attacks():
     """50 most-recent attack events."""
     try:
@@ -217,6 +592,7 @@ def get_recent_attacks():
 
 
 @app.route('/api/attacks/top-credentials')
+@login_required
 def get_top_credentials():
     """Top usernames, passwords, and username:password combos attempted."""
     try:
@@ -240,6 +616,7 @@ def get_top_credentials():
 
 
 @app.route('/api/attacks/top-commands')
+@login_required
 def get_top_commands():
     """Top shell commands executed in SSH honeypot."""
     try:
@@ -260,6 +637,7 @@ def get_top_commands():
 
 
 @app.route('/api/attacks/by-country')
+@login_required
 def get_attacks_by_country():
     """Attack counts grouped by source country."""
     try:
@@ -279,6 +657,7 @@ def get_attacks_by_country():
 
 
 @app.route('/api/attacks/timeline')
+@login_required
 def get_attack_timeline():
     """Hourly attack count histogram for the last 24 hours."""
     try:
@@ -308,6 +687,7 @@ def get_attack_timeline():
 
 
 @app.route('/api/attacks/geo-points')
+@login_required
 def get_geo_points():
     """Geolocated attack origins for world map plotting."""
     try:
@@ -370,4 +750,4 @@ def health_check():
 
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=FLASK_DEBUG)

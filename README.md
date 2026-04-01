@@ -105,6 +105,26 @@ xdg-open http://localhost:5000   # Linux / WSL2
 # or browse manually to http://localhost:5000
 ```
 
+## Dashboard Authentication
+
+The dashboard is now protected by login and access control. Initial credentials are provisioned by `.env`.
+
+- `FLASK_SECRET_KEY` must be set to a strong random value.
+- `ADMIN_USERNAME`, `ADMIN_EMAIL`, `ADMIN_PASSWORD` are used to bootstrap the initial admin user on first startup.
+- `FLASK_DEBUG` should be `0` in production.
+
+After first login, navigate to **Admin > User Management** to create additional user accounts.
+
+Non-admin users can view monitoring data, but only admins can call deployment APIs and manage other users.
+
+Then proceed with:
+
+```bash
+# 6. Verify auth login
+curl -X POST -H 'Content-Type: application/json' -d '{"username":"<admin>","password":"<pass>"}' http://localhost:5000/api/auth/login
+curl -b cookies.txt http://localhost:5000/api/auth/me
+```
+
 That's it. `make deploy` does everything: it builds the React frontend inside Docker (no local Node required), starts ES → waits for health → starts Logstash → Kibana → honeypots → webapp.
 
 ---
