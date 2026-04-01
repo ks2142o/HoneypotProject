@@ -248,6 +248,65 @@ def get_geo_points_from_db():
         return []
 
 
+def get_attacks_from_db(limit=50, honeypot_type=None, event_type=None):
+    """Query attack data from SQLite database."""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        query = '''
+            SELECT timestamp, src_ip, honeypot_type, event_type, username, password,
+                   input, http_method, request_url, message, country_name, city_name,
+                   latitude, longitude, raw_data
+            FROM attacks
+            WHERE 1=1
+        '''
+        params = []
+        
+        if honeypot_type:
+            query += ' AND honeypot_type = ?'
+            params.append(honeypot_type)
+            
+        if event_type:
+            query += ' AND event_type = ?'
+            params.append(event_type)
+            
+        query += ' ORDER BY timestamp DESC LIMIT ?'
+        params.append(limit)
+        
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        conn.close()
+        
+        # Convert to similar format as Elasticsearch
+        attacks = []
+        for row in rows:
+            attack = {
+                '@timestamp': row['timestamp'],
+                'src_ip': row['src_ip'],
+                'honeypot_type': row['honeypot_type'],
+                'event_type': row['event_type'],
+                'username': row['username'],
+                'password': row['password'],
+                'input': row['input'],
+                'http_method': row['http_method'],
+                'request_url': row['request_url'],
+                'message': row['message'],
+                'geoip': {
+                    'country_name': row['country_name'],
+                    'city_name': row['city_name'],
+                    'latitude': row['latitude'],
+                    'longitude': row['longitude']
+                }
+            }
+            attacks.append(attack)
+            
+        return attacks
+    except Exception as e:
+        print(f"❌ Error querying attacks from database: {e}")
+        return []
+
+
 def _detect_compose_cmd() -> list:
     """Return ['docker', 'compose'] if the v2 plugin is available, else ['docker-compose']."""
     for cmd in (['docker', 'compose'], ['docker-compose']):

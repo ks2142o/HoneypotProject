@@ -10,6 +10,7 @@ import LogsViewer   from './components/LogsViewer'
 import Notifications from './components/Notifications'
 import AuthPanel    from './components/AuthPanel'
 import UserAdminPanel from './components/UserAdminPanel'
+import AttackAdminPanel from './components/AttackAdminPanel'
 import { api, getMe, logout } from './api'
 
 export default function App() {
@@ -173,6 +174,9 @@ export default function App() {
 
         {/* Admin user management panel */}
         {isAdmin && <UserAdminPanel />}
+
+        {/* Admin attack database management panel */}
+        {isAdmin && <AttackAdminPanel />}
 
         {/* Stats row */}
         <StatCards
