@@ -15,6 +15,7 @@ import secrets
 from functools import wraps
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_cors import CORS
+import json
 
 # Configuration
 FLASK_ENV = os.environ.get('FLASK_ENV', 'development')
@@ -57,7 +58,7 @@ def get_db():
 
 
 def init_db():
-    """Create users table if it doesn't exist."""
+    """Create users and attacks tables if they don't exist."""
     print("🔧 Initializing database...")
     conn = get_db()
     cursor = conn.cursor()
@@ -73,6 +74,31 @@ def init_db():
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS attacks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT NOT NULL,
+            src_ip TEXT NOT NULL,
+            honeypot_type TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            username TEXT,
+            password TEXT,
+            input TEXT,
+            http_method TEXT,
+            request_url TEXT,
+            message TEXT,
+            country_name TEXT,
+            city_name TEXT,
+            latitude REAL,
+            longitude REAL,
+            raw_data TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_attacks_timestamp ON attacks(timestamp)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_attacks_src_ip ON attacks(src_ip)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_attacks_honeypot ON attacks(honeypot_type)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_attacks_event ON attacks(event_type)')
     conn.commit()
     conn.close()
     print("✅ Database initialized successfully")
@@ -146,6 +172,80 @@ def get_current_user():
     user = cursor.fetchone()
     conn.close()
     return user
+
+
+def save_attack_to_db(attack_data):
+    """Save attack data to SQLite database for persistence."""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Extract geoip data
+        geoip = attack_data.get('geoip', {})
+        
+        cursor.execute('''
+            INSERT INTO attacks (
+                timestamp, src_ip, honeypot_type, event_type, username, password,
+                input, http_method, request_url, message, country_name, city_name,
+                latitude, longitude, raw_data
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            attack_data.get('@timestamp'),
+            attack_data.get('src_ip'),
+            attack_data.get('honeypot_type'),
+            attack_data.get('event_type'),
+            attack_data.get('username'),
+            attack_data.get('password'),
+            attack_data.get('input'),
+            attack_data.get('http_method'),
+            attack_data.get('request_url'),
+            attack_data.get('message'),
+            geoip.get('country_name'),
+            geoip.get('city_name'),
+            geoip.get('latitude'),
+            geoip.get('longitude'),
+            json.dumps(attack_data)  # Store full raw data as backup
+        ))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"❌ Error saving attack to database: {e}")
+        return False
+
+
+def get_geo_points_from_db():
+    """Get geolocated attack points from SQLite database."""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT src_ip, honeypot_type, country_name, city_name, latitude, longitude
+            FROM attacks
+            WHERE latitude IS NOT NULL AND longitude IS NOT NULL
+            ORDER BY timestamp DESC
+            LIMIT 500
+        ''')
+        
+        rows = cursor.fetchall()
+        conn.close()
+        
+        points = []
+        for row in rows:
+            if row['latitude'] is not None and row['longitude'] is not None:
+                points.append({
+                    'lat': row['latitude'],
+                    'lon': row['longitude'],
+                    'country': row['country_name'] or 'Unknown',
+                    'ip': row['src_ip'],
+                    'type': row['honeypot_type']
+                })
+        
+        return points
+    except Exception as e:
+        print(f"❌ Error getting geo points from database: {e}")
+        return []
 
 
 def _detect_compose_cmd() -> list:
@@ -585,14 +685,79 @@ def get_stats():
 
 
 # ─────────────────────────────────────────
+# Attack data ingestion (saves to both ES and SQLite)
+# ─────────────────────────────────────────
+
+@app.route('/api/attacks/ingest', methods=['POST'])
+def ingest_attack():
+    """Ingest attack data and save to both Elasticsearch and SQLite database."""
+    try:
+        attack_data = request.get_json()
+        if not attack_data:
+            return jsonify({'success': False, 'error': 'No data provided'}), 400
+
+        # Save to SQLite database
+        db_saved = save_attack_to_db(attack_data)
+        
+        # Save to Elasticsearch
+        index_name = f"honeypot-{attack_data.get('honeypot_type', 'unknown')}-{datetime.now().strftime('%Y.%m.%d')}"
+        
+        # Create index mapping if it doesn't exist
+        mapping = {
+            "mappings": {
+                "properties": {
+                    "@timestamp": {"type": "date"},
+                    "src_ip": {"type": "ip"},
+                    "geoip": {
+                        "properties": {
+                            "location": {"type": "geo_point"},
+                            "latitude": {"type": "float"},
+                            "longitude": {"type": "float"},
+                            "country_name": {"type": "keyword"},
+                            "city_name": {"type": "keyword"},
+                        }
+                    },
+                    "honeypot_type": {"type": "keyword"},
+                    "event_type": {"type": "keyword"},
+                    "username": {"type": "keyword"},
+                    "password": {"type": "keyword"},
+                    "input": {"type": "text", "fields": {"keyword": {"type": "keyword", "ignore_above": 256}}},
+                    "http_method": {"type": "keyword"},
+                    "request_url": {"type": "keyword"},
+                    "message": {"type": "text"}
+                }
+            }
+        }
+        
+        # Create index with mapping
+        requests.put(f'{ES_URL}/{index_name}', json=mapping, timeout=5)
+        
+        # Index the document
+        es_resp = requests.post(f'{ES_URL}/{index_name}/_doc', json=attack_data, timeout=5)
+        es_saved = es_resp.status_code in (200, 201)
+        
+        return jsonify({
+            'success': db_saved and es_saved,
+            'database_saved': db_saved,
+            'elasticsearch_saved': es_saved,
+            'index': index_name
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error ingesting attack data: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ─────────────────────────────────────────
 # Attack analytics
 # ─────────────────────────────────────────
 
 @app.route('/api/attacks/recent')
 @login_required
 def get_recent_attacks():
-    """50 most-recent attack events."""
+    """50 most-recent attack events from Elasticsearch, with SQLite fallback."""
     try:
+        # First try Elasticsearch
         query = {
             'size': 50,
             'sort': [{'@timestamp': {'order': 'desc'}}],
@@ -603,10 +768,23 @@ def get_recent_attacks():
         resp = requests.post(f'{ES_URL}/honeypot-*/_search', json=query, timeout=5)
         if resp.status_code == 200:
             hits = resp.json().get('hits', {}).get('hits', [])
-            return jsonify({'attacks': [h['_source'] for h in hits], 'count': len(hits)})
-        return jsonify({'attacks': [], 'count': 0})
+            attacks = [h['_source'] for h in hits]
+            if attacks:  # If we got data from ES, return it
+                return jsonify({'attacks': attacks, 'count': len(attacks), 'source': 'elasticsearch'})
+        
+        # Fallback to SQLite database
+        print("⚠️ Elasticsearch unavailable, falling back to SQLite database")
+        attacks = get_attacks_from_db(limit=50)
+        return jsonify({'attacks': attacks, 'count': len(attacks), 'source': 'sqlite'})
+        
     except Exception as e:
-        return jsonify({'attacks': [], 'count': 0, 'error': str(e)})
+        # Final fallback to SQLite
+        print(f"❌ Error querying Elasticsearch: {e}, using SQLite fallback")
+        try:
+            attacks = get_attacks_from_db(limit=50)
+            return jsonify({'attacks': attacks, 'count': len(attacks), 'source': 'sqlite', 'error': str(e)})
+        except Exception as db_e:
+            return jsonify({'attacks': [], 'count': 0, 'error': f'ES: {str(e)}, DB: {str(db_e)}'})
 
 
 @app.route('/api/attacks/top-credentials')
@@ -707,8 +885,9 @@ def get_attack_timeline():
 @app.route('/api/attacks/geo-points')
 @login_required
 def get_geo_points():
-    """Geolocated attack origins for world map plotting."""
+    """Geolocated attack origins for world map plotting from Elasticsearch, with SQLite fallback."""
     try:
+        # First try Elasticsearch
         query = {
             'size': 500,
             '_source': ['geoip.latitude', 'geoip.longitude', 'geoip.country_name',
@@ -732,10 +911,22 @@ def get_geo_points():
                         'ip':      src.get('src_ip', ''),
                         'type':    src.get('honeypot_type', 'unknown'),
                     })
-            return jsonify({'points': points})
-        return jsonify({'points': []})
+            if points:  # If we got data from ES, return it
+                return jsonify({'points': points, 'source': 'elasticsearch'})
+        
+        # Fallback to SQLite database
+        print("⚠️ Elasticsearch unavailable, falling back to SQLite database for geo points")
+        points = get_geo_points_from_db()
+        return jsonify({'points': points, 'source': 'sqlite'})
+        
     except Exception as e:
-        return jsonify({'points': [], 'error': str(e)})
+        # Final fallback to SQLite
+        print(f"❌ Error querying Elasticsearch: {e}, using SQLite fallback")
+        try:
+            points = get_geo_points_from_db()
+            return jsonify({'points': points, 'source': 'sqlite', 'error': str(e)})
+        except Exception as db_e:
+            return jsonify({'points': [], 'error': f'ES: {str(e)}, DB: {str(db_e)}'})
 
 
 # ─────────────────────────────────────────
