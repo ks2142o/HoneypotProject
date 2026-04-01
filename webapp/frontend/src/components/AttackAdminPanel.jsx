@@ -31,9 +31,18 @@ function AttackAdminPanel() {
     try {
       // Use the existing API but with admin access. Use /all to get complete set.
       const data = await api.allAttacks();
-      let allAttacks = Array.isArray(data?.attacks) ? data.attacks : [];      if (allAttacks.length === 0 && Array.isArray(data)) {
-        // fallback if endpoint returns plain array
+      let allAttacks = [];
+      if (Array.isArray(data?.attacks)) {
+        allAttacks = data.attacks;
+      } else if (Array.isArray(data)) {
         allAttacks = data;
+      } else if (data && typeof data === 'object' && Array.isArray(data.attacks)) {
+        allAttacks = data.attacks;
+      }
+
+      // Validate array fallback.
+      if (!Array.isArray(allAttacks)) {
+        throw new Error('Invalid backend response: attacks must be an array.');
       }
 
       // Apply filters
@@ -59,7 +68,14 @@ function AttackAdminPanel() {
       const paginated = allAttacks.slice(start, start + PER_PAGE);
       setAttacks(paginated);
     } catch (err) {
-      setError((err && err.message) ? err.message : String(err || 'Failed to load attacks'));
+      const message = (err && err.message) ? err.message : String(err || 'Failed to load attacks');
+      if (message.includes('void 0')) {
+        console.error('Known issue: stale or corrupted JS bundle may be loaded (void 0 is not a function).');
+        setError('Browser JS bundle error detected. Clear cache + hard reload, and check that latest code is deployed.');
+      } else {
+        setError(message);
+      }
+      console.error('AttackAdminPanel loadAttacks error:', err);
     } finally {
       setLoading(false);
     }
