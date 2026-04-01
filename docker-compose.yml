@@ -342,12 +342,12 @@ services:
     restart: unless-stopped
 
     environment:
-      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN:-}
+      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN}
 
     command: >
       start --all
       --config /etc/ngrok.yml
-      --authtoken ${NGROK_AUTHTOKEN:-}
+      --authtoken ${NGROK_AUTHTOKEN}
 
     volumes:
       - ./ngrok.yml:/etc/ngrok.yml:ro
