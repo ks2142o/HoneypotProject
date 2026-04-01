@@ -815,11 +815,18 @@ def ingest_attack():
 @app.route('/api/attacks/recent')
 @login_required
 def get_recent_attacks():
-    """50 most-recent attack events from Elasticsearch, with SQLite fallback."""
+    """Most-recent attack events from Elasticsearch, with SQLite fallback."""
+    limit = 50
+    try:
+        limit_arg = int(request.args.get('limit', 50))
+        limit = min(max(limit_arg, 10), 5000)
+    except (TypeError, ValueError):
+        limit = 50
+
     try:
         # First try Elasticsearch
         query = {
-            'size': 50,
+            'size': limit,
             'sort': [{'@timestamp': {'order': 'desc'}}],
             'query': {'match_all': {}},
             '_source': ['@timestamp', 'src_ip', 'username', 'password', 'input',
