@@ -22,7 +22,11 @@ function AttackAdminPanel() {
     try {
       // Use the existing API but with admin access
       const data = await api.recentAttacks();
-      let allAttacks = data.attacks || [];
+      let allAttacks = Array.isArray(data?.attacks) ? data.attacks : [];
+      if (allAttacks.length === 0 && Array.isArray(data)) {
+        // fallback if endpoint returns plain array
+        allAttacks = data;
+      }
 
       // Apply filters
       if (honeypotFilter) {
@@ -47,15 +51,21 @@ function AttackAdminPanel() {
       const paginated = allAttacks.slice(start, start + PER_PAGE);
       setAttacks(paginated);
     } catch (err) {
-      setError(err.message || 'Failed to load attacks');
+      setError((err && err.message) ? err.message : String(err || 'Failed to load attacks'));
     } finally {
       setLoading(false);
     }
   };
 
   const handleDeleteAttack = async (attackId) => {
+    if (!attackId) {
+      setError('Delete not available for this record (missing ID)');
+      return;
+    }
+
     if (!window.confirm('Are you sure you want to delete this attack record?')) return;
-    // Note: This would require a new API endpoint for deleting attacks
+
+    // TODO: implement backend delete endpoint (/api/attacks/:id)
     setError('Delete functionality not implemented yet');
   };
 

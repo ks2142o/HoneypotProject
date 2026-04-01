@@ -62,35 +62,22 @@ function AuthPanel({ onAuthenticated }) {
           <p className="text-gray-400">Threat Intelligence Platform</p>
         </div>
 
-        {/* Tab Switcher */}
-        <div className="flex space-x-4 mb-6">
+        {/* Mode switcher (single action button) */}
+        <div className="flex items-center justify-between mb-6">
+          <span className="text-sm text-gray-400">
+            {mode === 'login' ? 'Log into your account' : 'Create a new account'}
+          </span>
           <button
+            type="button"
             onClick={() => {
-              setMode('login');
+              const nextMode = mode === 'login' ? 'register' : 'login';
+              setMode(nextMode);
               setError('');
               setFormData({ username: '', email: '', password: '' });
             }}
-            className={`flex-1 py-2 px-4 rounded font-semibold transition ${
-              mode === 'login'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-            }`}
+            className="text-xs text-cyan-300 hover:text-cyan-200 underline transition"
           >
-            Login
-          </button>
-          <button
-            onClick={() => {
-              setMode('register');
-              setError('');
-              setFormData({ username: '', email: '', password: '' });
-            }}
-            className={`flex-1 py-2 px-4 rounded font-semibold transition ${
-              mode === 'register'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-            }`}
-          >
-            Register
+            {mode === 'login' ? 'Switch to Register' : 'Switch to Login'}
           </button>
         </div>
 
