@@ -65,8 +65,16 @@ function AttackAdminPanel() {
 
     if (!window.confirm('Are you sure you want to delete this attack record?')) return;
 
-    // TODO: implement backend delete endpoint (/api/attacks/:id)
-    setError('Delete functionality not implemented yet');
+    setLoading(true);
+    setError('');
+    try {
+      await api.deleteAttack(attackId);
+      await loadAttacks();
+    } catch (err) {
+      setError(err.message || 'Failed to delete attack');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const exportData = () => {

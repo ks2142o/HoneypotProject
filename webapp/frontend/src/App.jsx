@@ -58,6 +58,7 @@ export default function App() {
   }
 
   const isAdmin = user?.role === 'admin'
+  const [adminView, setAdminView] = useState('dashboard')
 
   /* ── loaders ─────────────────────────────────────────────── */
   const load = useCallback(async (fn, setter) => {
@@ -172,13 +173,27 @@ export default function App() {
 
       <main className="max-w-screen-2xl mx-auto px-4 py-5 space-y-5 animate-fadeIn">
 
-        {/* Admin user management panel */}
-        {isAdmin && <UserAdminPanel />}
+        {/* Admin view selector */}
+        {isAdmin && (
+          <div className="flex items-center gap-2 justify-center mb-4">
+            {['dashboard', 'users', 'attacks'].map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setAdminView(tab)}
+                className={`px-3 py-1.5 rounded font-medium transition ${adminView === tab ? 'bg-cyber-accent text-black' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}
+              >
+                {tab === 'dashboard' ? 'Main Dashboard' : tab === 'users' ? 'User Management' : 'Attack Database'}
+              </button>
+            ))}
+          </div>
+        )}
 
-        {/* Admin attack database management panel */}
-        {isAdmin && <AttackAdminPanel />}
+        {isAdmin && adminView === 'users' && <UserAdminPanel />}
+        {isAdmin && adminView === 'attacks' && <AttackAdminPanel />}
 
-        {/* Stats row */}
+        {( !isAdmin || adminView === 'dashboard' ) && (
+          <>
+            {/* Stats row */}
         <StatCards
           totalDocs={stats.total_docs}
           runningCount={runningCount}
@@ -221,7 +236,8 @@ export default function App() {
 
         {/* Logs */}
         <LogsViewer notify={notify} />
-
+      </>
+        )}
       </main>
     </div>
   )

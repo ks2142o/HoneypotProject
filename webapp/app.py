@@ -282,6 +282,7 @@ def get_attacks_from_db(limit=50, honeypot_type=None, event_type=None):
         attacks = []
         for row in rows:
             attack = {
+                'id': row['id'],
                 '@timestamp': row['timestamp'],
                 'src_ip': row['src_ip'],
                 'honeypot_type': row['honeypot_type'],
@@ -827,7 +828,11 @@ def get_recent_attacks():
         resp = requests.post(f'{ES_URL}/honeypot-*/_search', json=query, timeout=5)
         if resp.status_code == 200:
             hits = resp.json().get('hits', {}).get('hits', [])
-            attacks = [h['_source'] for h in hits]
+            attacks = []
+            for h in hits:
+                src = h.get('_source', {})
+                src['id'] = h.get('_id')
+                attacks.append(src)
             if attacks:  # If we got data from ES, return it
                 return jsonify({'attacks': attacks, 'count': len(attacks), 'source': 'elasticsearch'})
         
@@ -844,6 +849,26 @@ def get_recent_attacks():
             return jsonify({'attacks': attacks, 'count': len(attacks), 'source': 'sqlite', 'error': str(e)})
         except Exception as db_e:
             return jsonify({'attacks': [], 'count': 0, 'error': f'ES: {str(e)}, DB: {str(db_e)}'})
+
+
+@app.route('/api/attacks/<int:attack_id>', methods=['DELETE'])
+@admin_required
+def delete_attack(attack_id):
+    """Delete an attack event from the local SQLite database."""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('SELECT id FROM attacks WHERE id=?', (attack_id,))
+        if cursor.fetchone() is None:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Attack not found'}), 404
+
+        cursor.execute('DELETE FROM attacks WHERE id=?', (attack_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'message': 'Attack deleted'}), 200
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @app.route('/api/attacks/top-credentials')
