@@ -43,6 +43,12 @@ export default function Header({ user, isAdmin, health, isRefreshing, onRefresh,
             <span className="hidden sm:inline text-xs text-cyber-muted font-mono tracking-widest">LIVE</span>
           </div>
 
+          {/* Global access indicator */}
+          <div className="hidden sm:flex items-center gap-1.5 text-xs font-mono text-cyber-muted">
+            <span className="px-2 py-0.5 border border-cyber-border rounded">Public</span>
+            <span className="px-2 py-0.5 border border-cyber-border rounded">Network: 10.250.0.0/16</span>
+          </div>
+
           {/* Component health — hidden on mobile */}
           <div className="hidden lg:flex items-center gap-4 border-l border-cyber-border pl-4">
             <HealthDot label="Docker" value={health.docker ?? '…'} />
