@@ -7,7 +7,8 @@
 #   16 GB → ES=-Xms2g   -Xmx2g     LS=-Xms1g   -Xmx1g
 # ==============================================================================
 
-version: '3.7'
+# NOTE: Docker Compose v2 CLI ignores the top-level `version` field; it is
+# kept for backward reference only. Remove `version` to avoid this warning.
 
 networks:
   honeypot-network:
