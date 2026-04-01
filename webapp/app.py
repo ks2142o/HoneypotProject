@@ -14,6 +14,7 @@ import sqlite3
 import secrets
 from functools import wraps
 from werkzeug.security import generate_password_hash, check_password_hash
+from flask_cors import CORS
 
 # Configuration
 FLASK_ENV = os.environ.get('FLASK_ENV', 'development')
@@ -23,10 +24,14 @@ FLASK_DEBUG = os.environ.get('FLASK_DEBUG', '0') == '1'
 # static_folder='static' → Flask serves built React bundle
 app = Flask(__name__, static_folder='static', static_url_path='')
 app.config['SECRET_KEY'] = os.environ.get('FLASK_SECRET_KEY', secrets.token_hex(32))
-app.config['SESSION_COOKIE_SECURE'] = IS_PROD
+# Fix session cookies for HTTP (disable secure flag until HTTPS is set up)
+app.config['SESSION_COOKIE_SECURE'] = False  # Changed from IS_PROD
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
+
+# Configure CORS to allow credentials (cookies) from frontend
+CORS(app, supports_credentials=True, origins=["http://localhost:5173", "http://127.0.0.1:5173"])
 
 # Database configuration
 DB_PATH = os.environ.get('WEBAPP_DB_PATH', '/app/data/users.db')
@@ -53,6 +58,7 @@ def get_db():
 
 def init_db():
     """Create users table if it doesn't exist."""
+    print("🔧 Initializing database...")
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute('''
@@ -69,10 +75,12 @@ def init_db():
     ''')
     conn.commit()
     conn.close()
+    print("✅ Database initialized successfully")
 
 
 def bootstrap_admin():
     """Ensure at least one admin exists; create from env if needed."""
+    print("🔧 Checking for admin user...")
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT id FROM users WHERE role='admin' AND is_active=1")
@@ -89,8 +97,13 @@ def bootstrap_admin():
                     VALUES (?, ?, ?, 'admin')
                 ''', (admin_username, admin_email, password_hash))
                 conn.commit()
+                print(f"✅ Admin user created: {admin_username}")
             except sqlite3.IntegrityError:
-                pass
+                print("⚠️ Admin user already exists")
+        else:
+            print("⚠️ Admin credentials not set in environment")
+    else:
+        print("✅ Admin user already exists")
     conn.close()
 
 
@@ -223,6 +236,7 @@ def login():
     if not username_or_email or not password:
         return jsonify({'error': 'Username/email and password required'}), 400
     
+    print(f"🔐 Login attempt for: {username_or_email}")
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute('''
@@ -233,12 +247,16 @@ def login():
     conn.close()
     
     if not user or not check_password_hash(user['password_hash'], password):
+        print("❌ Invalid credentials")
         return jsonify({'error': 'Invalid credentials'}), 401
     
     session.permanent = True
     session['user_id'] = user['id']
     session['username'] = user['username']
     session['role'] = user['role']
+    
+    print(f"✅ Login successful for user: {user['username']} (role: {user['role']})")
+    print(f"📋 Session data set: user_id={user['id']}, username={user['username']}")
     
     return jsonify({
         'message': 'Logged in successfully',
