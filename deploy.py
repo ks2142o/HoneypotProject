@@ -280,6 +280,17 @@ LOG_RETENTION_DAYS=30
         logger.info("Deploying ELK stack...")
         
         try:
+            # A changed compose network (for example after copying a new
+            # .env.example) can leave the old stack attached to the network.
+            # Cleanly stop the existing stack first so Docker can recreate the
+            # network without hitting "active endpoints" errors.
+            logger.info("Stopping any existing Compose stack before ELK startup...")
+            subprocess.run(
+                self.compose_cmd + ['down', '--remove-orphans'],
+                cwd=str(self.project_root),
+                check=True
+            )
+
             # Start Elasticsearch first
             logger.info("Starting Elasticsearch...")
             subprocess.run(
