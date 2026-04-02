@@ -881,12 +881,39 @@ def delete_attack(attack_id):
 @app.route('/api/attacks/all')
 @login_required
 def get_all_attacks():
-    """Return all saved attacks from SQLite as a single bulk list."""
+    """Return all attacks across honeypots (Elasticsearch first, SQLite fallback)."""
     try:
+        query = {
+            'size': 10000,
+            'sort': [{'@timestamp': {'order': 'desc'}}],
+            'query': {'match_all': {}},
+            '_source': [
+                '@timestamp', 'src_ip', 'username', 'password', 'input',
+                'geoip.country_name', 'geoip.city_name', 'honeypot_type', 'event_type',
+                'http_method', 'request_url', 'message'
+            ],
+            'track_total_hits': True,
+        }
+        resp = requests.post(f'{ES_URL}/honeypot-*/_search', json=query, timeout=10)
+        if resp.status_code == 200:
+            hits = resp.json().get('hits', {}).get('hits', [])
+            attacks = []
+            for h in hits:
+                src = h.get('_source', {})
+                src['id'] = h.get('_id')
+                attacks.append(src)
+            return jsonify({'attacks': attacks, 'count': len(attacks), 'source': 'elasticsearch'})
+
+        # If ES is reachable but not returning 200, fall back to SQLite.
         attacks = get_attacks_from_db(limit=10000)
         return jsonify({'attacks': attacks, 'count': len(attacks), 'source': 'sqlite'})
     except Exception as e:
-        return jsonify({'attacks': [], 'count': 0, 'error': str(e)}), 500
+        # Final fallback for resilience when ES is unavailable.
+        try:
+            attacks = get_attacks_from_db(limit=10000)
+            return jsonify({'attacks': attacks, 'count': len(attacks), 'source': 'sqlite', 'error': str(e)})
+        except Exception as db_e:
+            return jsonify({'attacks': [], 'count': 0, 'error': f'ES: {str(e)}, DB: {str(db_e)}'}), 500
 
 
 @app.route('/api/attacks/top-credentials')
