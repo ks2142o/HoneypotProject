@@ -1018,28 +1018,45 @@ def get_geo_points():
     try:
         # First try Elasticsearch
         query = {
-            'size': 500,
+            # Fetch a wider recent window so high-volume cowrie events do not
+            # crowd out lower-volume flask/dionaea points.
+            'size': 5000,
+            'sort': [{'@timestamp': {'order': 'desc'}}],
             '_source': ['geoip.latitude', 'geoip.longitude', 'geoip.country_name',
                         'src_ip', 'honeypot_type'],
-            'query': {'exists': {'field': 'geoip.location'}},
+            'query': {
+                'bool': {
+                    'must': [
+                        {'exists': {'field': 'geoip.latitude'}},
+                        {'exists': {'field': 'geoip.longitude'}},
+                    ]
+                }
+            },
         }
         resp = requests.post(f'{ES_URL}/honeypot-*/_search', json=query, timeout=5)
         if resp.status_code == 200:
             hits = resp.json().get('hits', {}).get('hits', [])
             points = []
+            type_counts = {}
             for h in hits:
                 src   = h.get('_source', {})
                 geoip = src.get('geoip', {})
                 lat   = geoip.get('latitude')
                 lon   = geoip.get('longitude')
                 if lat is not None and lon is not None:
+                    hp_type = src.get('honeypot_type', 'unknown')
+                    # Cap points per honeypot type to keep map balanced.
+                    current = type_counts.get(hp_type, 0)
+                    if current >= 500:
+                        continue
                     points.append({
                         'lat':     lat,
                         'lon':     lon,
                         'country': geoip.get('country_name', 'Unknown'),
                         'ip':      src.get('src_ip', ''),
-                        'type':    src.get('honeypot_type', 'unknown'),
+                        'type':    hp_type,
                     })
+                    type_counts[hp_type] = current + 1
             if points:  # If we got data from ES, return it
                 return jsonify({'points': points, 'source': 'elasticsearch'})
         
