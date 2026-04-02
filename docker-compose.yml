@@ -192,9 +192,10 @@ services:
       - ./data/cowrie/downloads:/cowrie/cowrie-git/var/lib/cowrie/downloads
 
     # Honeypot ports must be publicly accessible — keep binding to 0.0.0.0
+    # Cloud firewall must allow these ports for remote attackers to reach Cowrie.
     ports:
-      - "${COWRIE_SSH_PORT}:2222"
-      - "${COWRIE_TELNET_PORT}:2223"
+      - "0.0.0.0:${COWRIE_SSH_PORT}:2222"
+      - "0.0.0.0:${COWRIE_TELNET_PORT}:2223"
 
     networks:
       - honeypot-network
@@ -228,16 +229,17 @@ services:
     entrypoint: /opt/dionaea/entrypoint.sh
 
     # Honeypot ports — publicly accessible
+    # These must listen on all interfaces so public internet traffic reaches Dionaea.
     ports:
-      - "${DIONAEA_FTP_PORT}:21"
-      - "${DIONAEA_DAYTIME_PORT}:42"
-      - "${DIONAEA_RPC_PORT}:135"
-      - "${DIONAEA_HTTPS_PORT}:443"
-      - "${DIONAEA_SMB_PORT}:445"
-      - "${DIONAEA_MSSQL_PORT}:1433"
-      - "${DIONAEA_MYSQL_PORT}:3306"
-      - "${DIONAEA_SIP_PORT}:5060"
-      - "${DIONAEA_SIPS_PORT}:5061"
+      - "0.0.0.0:${DIONAEA_FTP_PORT}:21"
+      - "0.0.0.0:${DIONAEA_DAYTIME_PORT}:42"
+      - "0.0.0.0:${DIONAEA_RPC_PORT}:135"
+      - "0.0.0.0:${DIONAEA_HTTPS_PORT}:443"
+      - "0.0.0.0:${DIONAEA_SMB_PORT}:445"
+      - "0.0.0.0:${DIONAEA_MSSQL_PORT}:1433"
+      - "0.0.0.0:${DIONAEA_MYSQL_PORT}:3306"
+      - "0.0.0.0:${DIONAEA_SIP_PORT}:5060"
+      - "0.0.0.0:${DIONAEA_SIPS_PORT}:5061"
 
     networks:
       - honeypot-network
@@ -268,8 +270,9 @@ services:
       - ./logs/flask:/app/logs
 
     # Honeypot port — publicly accessible
+    # Exposed on all interfaces so ngrok/direct internet traffic can reach it.
     ports:
-      - "${FLASK_HTTP_PORT}:8080"
+      - "0.0.0.0:${FLASK_HTTP_PORT}:8080"
 
     networks:
       - honeypot-network
