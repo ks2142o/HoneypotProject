@@ -66,6 +66,22 @@ class HoneypotDeployer:
                 pass
         # If neither responds return the v2 form so the error message is clear
         return ['docker', 'compose']
+
+    def _read_env_value(self, key: str, default: str) -> str:
+        """Read a key from .env when available, otherwise fall back safely."""
+        if self.env_file.exists():
+            try:
+                with open(self.env_file, 'r') as env_handle:
+                    for raw_line in env_handle:
+                        line = raw_line.strip()
+                        if not line or line.startswith('#') or '=' not in line:
+                            continue
+                        current_key, value = line.split('=', 1)
+                        if current_key.strip() == key:
+                            return value.strip()
+            except OSError:
+                pass
+        return os.environ.get(key, default)
         
     def check_dependencies(self) -> bool:
         """Check if all required dependencies are installed"""
@@ -188,7 +204,7 @@ NETWORK_NAME=honeypot-network
 SUBNET=172.25.0.0/16
 
 # ── Host port mappings ────────────────────────────────────────────────────────
-ELASTICSEARCH_PORT=9200
+ELASTICSEARCH_PORT=9201
 KIBANA_PORT=5601
 LOGSTASH_BEATS_PORT=5044
 LOGSTASH_API_PORT=9600
@@ -358,8 +374,9 @@ LOG_RETENTION_DAYS=30
         
         while time.time() - start_time < timeout:
             try:
+                es_port = self._read_env_value('ELASTICSEARCH_PORT', '9201')
                 response = requests.get(
-                    'http://localhost:9200/_cluster/health',
+                    f'http://localhost:{es_port}/_cluster/health',
                     timeout=5
                 )
                 
@@ -583,10 +600,10 @@ def main():
         logger.info("\nAccess Points:")
         logger.info("  - Web Management Interface: http://localhost:5000")
         logger.info("  - Kibana Dashboard: http://localhost:5601")
-        logger.info("  - Elasticsearch API: http://localhost:9200")
+        logger.info(f"  - Elasticsearch API: http://localhost:{deployer._read_env_value('ELASTICSEARCH_PORT', '9201')}")
         logger.info("  - SSH Honeypot: port 2222")
         logger.info("  - Telnet Honeypot: port 2223")
-        _flask_port = os.environ.get('FLASK_HTTP_PORT', '8181')
+        _flask_port = deployer._read_env_value('FLASK_HTTP_PORT', '80')
         logger.info(f"  - Web Honeypot: port {_flask_port}")
         logger.info("\n⚠ NOTE: No authentication required (security disabled for testing)")
         logger.info("="*60)

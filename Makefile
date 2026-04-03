@@ -16,7 +16,7 @@ FRONTEND_DIR   := webapp/frontend
 FLASK_HTTP_PORT    := $(shell grep -E '^FLASK_HTTP_PORT=' $(ENV_FILE) 2>/dev/null | cut -d= -f2 | tr -d ' \t' || echo 8181)
 WEBAPP_PORT        := $(shell grep -E '^WEBAPP_PORT='     $(ENV_FILE) 2>/dev/null | cut -d= -f2 | tr -d ' \t' || echo 5000)
 KIBANA_PORT        := $(shell grep -E '^KIBANA_PORT='     $(ENV_FILE) 2>/dev/null | cut -d= -f2 | tr -d ' \t' || echo 5601)
-ELASTICSEARCH_PORT := $(shell grep -E '^ELASTICSEARCH_PORT=' $(ENV_FILE) 2>/dev/null | cut -d= -f2 | tr -d ' \t' || echo 9200)
+ELASTICSEARCH_PORT := $(shell grep -E '^ELASTICSEARCH_PORT=' $(ENV_FILE) 2>/dev/null | cut -d= -f2 | tr -d ' \t' || echo 9201)
 COWRIE_SSH_PORT    := $(shell grep -E '^COWRIE_SSH_PORT=' $(ENV_FILE) 2>/dev/null | cut -d= -f2 | tr -d ' \t' || echo 2222)
 COWRIE_TELNET_PORT := $(shell grep -E '^COWRIE_TELNET_PORT=' $(ENV_FILE) 2>/dev/null | cut -d= -f2 | tr -d ' \t' || echo 2223)
 
@@ -367,19 +367,19 @@ urls: ## Print all service access URLs
 .PHONY: es-status
 es-status: ## Show Elasticsearch cluster health in detail
 	$(call log, Querying Elasticsearch cluster health…)
-	@curl -s http://localhost:9200/_cluster/health?pretty 2>/dev/null \
+	@curl -s http://localhost:$(ELASTICSEARCH_PORT)/_cluster/health?pretty 2>/dev/null \
 	  || $(call err, Elasticsearch is not responding)
 
 .PHONY: es-indices
 es-indices: ## List all Elasticsearch honeypot indices
 	$(call log, Listing honeypot indices…)
-	@curl -s "http://localhost:9200/_cat/indices/honeypot-*?v&s=index" 2>/dev/null \
+	@curl -s "http://localhost:$(ELASTICSEARCH_PORT)/_cat/indices/honeypot-*?v&s=index" 2>/dev/null \
 	  || $(call err, Elasticsearch is not responding)
 
 .PHONY: attack-count
 attack-count: ## Show total attack event count across all honeypot indices
 	$(call log, Counting attack events…)
-	@curl -s "http://localhost:9200/honeypot-*/_count" 2>/dev/null | python3 -m json.tool \
+	@curl -s "http://localhost:$(ELASTICSEARCH_PORT)/honeypot-*/_count" 2>/dev/null | python3 -m json.tool \
 	  || $(call err, Elasticsearch is not responding)
 
 .PHONY: seed
@@ -521,7 +521,7 @@ test-ports: ## Verify all expected TCP ports are listening
 test-es: ## Test Elasticsearch index creation and document ingestion pipeline
 	$(call log, Elasticsearch pipeline test…)
 	@printf "  Inserting test document… "
-	@result=$$(curl -sf -X POST "http://localhost:9200/honeypot-test-$(shell date +%Y.%m.%d)/_doc" \
+	@result=$$(curl -sf -X POST "http://localhost:$(ELASTICSEARCH_PORT)/honeypot-test-$(shell date +%Y.%m.%d)/_doc" \
 	  -H "Content-Type: application/json" \
 	  -d '{"src_ip":"1.2.3.4","event_type":"test","honeypot_type":"test","@timestamp":"$(shell date -u +%Y-%m-%dT%H:%M:%SZ)"}' \
 	  2>/dev/null); \
@@ -529,7 +529,7 @@ test-es: ## Test Elasticsearch index creation and document ingestion pipeline
 	   && printf "$(GREEN)PASS$(RESET)\n" \
 	   || printf "$(RED)FAIL (ES may not be ready)$(RESET)\n"
 	@printf "  Querying test index…     "
-	@curl -sf "http://localhost:9200/honeypot-test-*/_count" > /dev/null 2>&1 \
+	@curl -sf "http://localhost:$(ELASTICSEARCH_PORT)/honeypot-test-*/_count" > /dev/null 2>&1 \
 	  && printf "$(GREEN)PASS$(RESET)\n" || printf "$(RED)FAIL$(RESET)\n"
 
 .PHONY: test-ssh
@@ -586,7 +586,7 @@ backup: ## Snapshot Elasticsearch data to ./backups/
 	$(call log, Backing up Elasticsearch data…)
 	@mkdir -p backups
 	@ts=$$(date +%Y%m%d_%H%M%S); \
-	 curl -sf -X PUT "http://localhost:9200/_snapshot/backup_$$ts" \
+	 curl -sf -X PUT "http://localhost:$(ELASTICSEARCH_PORT)/_snapshot/backup_$$ts" \
 	   -H "Content-Type: application/json" \
 	   -d "{\"type\":\"fs\",\"settings\":{\"location\":\"/backups/$$ts\"}}" > /dev/null 2>&1; \
 	 docker cp elasticsearch:/usr/share/elasticsearch/data/ backups/es-$$ts/ 2>/dev/null \

@@ -224,7 +224,7 @@ make purge-images     # DESTRUCTIVE: purge + remove images
 |---|---|---|---|
 | React Dashboard | **5000** | HTTP | Main management UI (this project) |
 | Kibana | **5601** | HTTP | Elasticsearch visualisation |
-| Elasticsearch | **9200** | HTTP | REST API & data store |
+| Elasticsearch | **9201** | HTTP | REST API & data store |
 | Logstash monitoring | **9600** | HTTP | Logstash metrics API |
 | Cowrie SSH | **2222** | SSH | SSH honeypot |
 | Cowrie Telnet | **2223** | Telnet | Telnet honeypot |
@@ -374,7 +374,7 @@ make test
 
 # Individual test categories
 make test-health   # HTTP 200 checks on all endpoints
-make test-ports    # TCP port availability (5000, 5601, 9200, 8080, 2222, 2223)
+make test-ports    # TCP port availability (5000, 5601, 9201, 8080, 2222, 2223)
 make test-es       # Insert + query a document to verify the ES pipeline
 make test-ssh      # Verify Cowrie SSH is responding on port 2222
 ```
@@ -435,7 +435,7 @@ make restart-webapp
 
 ```bash
 # Find and kill the conflicting process
-sudo lsof -i :9200    # or :5601, :5000, etc.
+sudo lsof -i :9201    # or :5601, :5000, etc.
 sudo kill -9 <PID>
 ```
 
