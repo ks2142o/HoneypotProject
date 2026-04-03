@@ -12,6 +12,7 @@ ENV_FILE       := .env
 DEPLOY_SCRIPT  := deploy.py
 FRONTEND_DIR   := webapp/frontend
 PORT_FIX_SCRIPT := scripts/resolve_port_conflicts.py
+NETWORK_FIX_SCRIPT := scripts/resolve_network_subnet.py
 
 # Read port values from .env so Makefile health/url targets stay in sync
 FLASK_HTTP_PORT    := $(shell grep -E '^FLASK_HTTP_PORT=' $(ENV_FILE) 2>/dev/null | cut -d= -f2 | tr -d ' \t' || echo 18080)
@@ -198,6 +199,12 @@ fix-ports: ## Auto-remap conflicted host ports in .env
 	@python3 $(PORT_FIX_SCRIPT) --env-file $(ENV_FILE)
 	@$(call ok, Port conflict scan complete)
 
+.PHONY: fix-network
+fix-network: ## Resolve Docker bridge subnet overlap for .env SUBNET
+	$(call log, Resolving Docker subnet overlaps from .env…)
+	@python3 $(NETWORK_FIX_SCRIPT) --env-file $(ENV_FILE)
+	@$(call ok, Network subnet scan complete)
+
 
 # ==============================================================================
 ##@ Build
@@ -234,6 +241,7 @@ frontend-dev: ## Start Vite dev server with HMR (requires Node + Flask running s
 .PHONY: deploy
 deploy: setup ## Full deployment — ELK stack + honeypots + webapp (recommended)
 	$(call log, Starting full deployment via deploy.py…)
+	@$(MAKE) --no-print-directory fix-network
 	@$(MAKE) --no-print-directory fix-ports
 	@python3 $(DEPLOY_SCRIPT) --mode=full --force
 	@$(call ok, Deployment complete)
@@ -242,6 +250,7 @@ deploy: setup ## Full deployment — ELK stack + honeypots + webapp (recommended
 .PHONY: up
 up: ## Start all services with docker compose (images must already be built)
 	$(call log, Starting all services…)
+	@$(MAKE) --no-print-directory fix-network
 	@$(MAKE) --no-print-directory fix-ports
 	@$(DOCKER_COMPOSE) -f $(COMPOSE_FILE) up -d
 	@$(call ok, All services started)
@@ -250,6 +259,7 @@ up: ## Start all services with docker compose (images must already be built)
 .PHONY: deploy-elk
 deploy-elk: vm-fix ## Deploy ELK stack only (Elasticsearch + Logstash + Kibana)
 	$(call log, Deploying ELK stack…)
+	@$(MAKE) --no-print-directory fix-network
 	@$(MAKE) --no-print-directory fix-ports
 	@python3 $(DEPLOY_SCRIPT) --mode=elk-only --force
 	@$(call ok, ELK stack deployed)
@@ -257,6 +267,7 @@ deploy-elk: vm-fix ## Deploy ELK stack only (Elasticsearch + Logstash + Kibana)
 .PHONY: deploy-honeypots
 deploy-honeypots: ## Deploy honeypots only (Cowrie + Dionaea + Flask)
 	$(call log, Deploying honeypots…)
+	@$(MAKE) --no-print-directory fix-network
 	@$(MAKE) --no-print-directory fix-ports
 	@python3 $(DEPLOY_SCRIPT) --mode=honeypots-only --force
 	@$(call ok, Honeypots deployed)
@@ -264,6 +275,7 @@ deploy-honeypots: ## Deploy honeypots only (Cowrie + Dionaea + Flask)
 .PHONY: deploy-webapp
 deploy-webapp: build-webapp ## Build and deploy the management webapp only
 	$(call log, Deploying webapp…)
+	@$(MAKE) --no-print-directory fix-network
 	@$(MAKE) --no-print-directory fix-ports
 	@$(DOCKER_COMPOSE) -f $(COMPOSE_FILE) up -d webapp
 	@$(call ok, Webapp deployed at http://localhost:$(WEBAPP_PORT))

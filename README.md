@@ -310,7 +310,7 @@ COWRIE_TELNET_PORT=2323
 FLASK_HTTP_PORT=18080
 
 # Auto-remap conflicted host ports during deployment
-AUTO_REMAP_PORTS_ON_CONFLICT=1
+AUTO_REMAP_PORTS_ON_CONFLICT=0
 
 # Memory (tune to your system)
 ES_JAVA_OPTS=-Xms512m -Xmx512m
@@ -321,6 +321,22 @@ TZ=Asia/Karachi
 ```
 
 > **Security note:** The `.env` file is in `.gitignore`. Never commit passwords to version control.
+
+### Oracle Cloud Note
+
+For OCI deployments, keep host ports static so your NSG/Security List and UFW rules remain stable:
+
+```bash
+AUTO_REMAP_PORTS_ON_CONFLICT=0
+```
+
+If Docker reports network overlap (`invalid pool request: Pool overlaps with other one`), run:
+
+```bash
+make fix-network
+```
+
+This updates `SUBNET` in `.env` to a non-overlapping Docker bridge range.
 
 ---
 

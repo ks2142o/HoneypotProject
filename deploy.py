@@ -201,7 +201,7 @@ LS_JAVA_OPTS=-Xms256m -Xmx256m
 
 # ── Docker network ────────────────────────────────────────────────────────────
 NETWORK_NAME=honeypot-network
-SUBNET=172.25.0.0/16
+SUBNET=172.30.250.0/24
 
 # ── Host port mappings ────────────────────────────────────────────────────────
 ELASTICSEARCH_PORT=9201
@@ -224,7 +224,7 @@ FLASK_HTTP_PORT=18080
 
 # Automatically remap conflicted host ports during dashboard deployment actions.
 # Set to 0 if you prefer strict failure over auto-remediation.
-AUTO_REMAP_PORTS_ON_CONFLICT=1
+AUTO_REMAP_PORTS_ON_CONFLICT=0
 
 # ── ngrok (WSL2 internet exposure — not needed on cloud VPS) ─────────────────
 NGROK_AUTHTOKEN=
@@ -289,6 +289,25 @@ LOG_RETENTION_DAYS=30
             return True
         except subprocess.CalledProcessError as e:
             logger.error("Port conflict resolver failed: %s", e)
+            return False
+
+    def resolve_network_subnet(self) -> bool:
+        """Resolve Docker network CIDR overlap before compose creates the project network."""
+        script_path = self.project_root / 'scripts' / 'resolve_network_subnet.py'
+        if not script_path.exists():
+            logger.warning("Network resolver script not found: %s", script_path)
+            return True
+
+        logger.info("Checking Docker subnet overlap from .env SUBNET...")
+        try:
+            subprocess.run(
+                ['python3', str(script_path), '--env-file', str(self.env_file)],
+                cwd=str(self.project_root),
+                check=True,
+            )
+            return True
+        except subprocess.CalledProcessError as e:
+            logger.error("Network subnet resolver failed: %s", e)
             return False
     
     def deploy_honeypots(self, honeypots: List[str] = None) -> bool:
@@ -596,6 +615,10 @@ def main():
     
     if not deployer.create_directory_structure():
         logger.error("Directory structure creation failed")
+        sys.exit(1)
+
+    if not deployer.resolve_network_subnet():
+        logger.error("Network subnet conflict resolution failed")
         sys.exit(1)
 
     if not deployer.resolve_port_conflicts():

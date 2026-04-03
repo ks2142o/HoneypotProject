@@ -567,7 +567,7 @@ def _run_compose_action(action, timeout=180):
         }
 
     env_values = _read_env_values()
-    auto_remap = _is_truthy(env_values.get('AUTO_REMAP_PORTS_ON_CONFLICT', '1'))
+    auto_remap = _is_truthy(env_values.get('AUTO_REMAP_PORTS_ON_CONFLICT', '0'))
     if not auto_remap:
         return {
             'ok': False,
