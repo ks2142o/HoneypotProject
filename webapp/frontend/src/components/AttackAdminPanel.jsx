@@ -3,9 +3,9 @@ import * as api from '../api';
 import { RefreshCw, Search, Trash2, Download, Filter, Target } from 'lucide-react';
 
 const HONEYPOT_COLOR = {
-  cowrie: 'text-cyber-green',
-  dionaea: 'text-cyber-blue',
-  flask: 'text-cyber-accent'
+  'cowrie-ssh': 'text-cyber-green',
+  'dionaea': 'text-cyber-blue',
+  'flask-http': 'text-cyber-accent'
 };
 
 function AttackAdminPanel() {
@@ -151,9 +151,9 @@ function AttackAdminPanel() {
               className="cyber-input pl-8 w-32 text-xs cursor-pointer appearance-none bg-no-repeat"
             >
               <option value="">All Services</option>
-              <option value="cowrie">Cowrie (SSH/Telnet)</option>
+              <option value="cowrie-ssh">Cowrie (SSH/Telnet)</option>
               <option value="dionaea">Dionaea</option>
-              <option value="flask">Flask (HTTP)</option>
+              <option value="flask-http">Flask (HTTP)</option>
             </select>
           </div>
 

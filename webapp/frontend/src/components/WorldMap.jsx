@@ -62,18 +62,21 @@ export default function WorldMap({ points, onRefresh }) {
 
           {points.map((p, i) => {
             const color = TYPE_COLORS[p.type] ?? '#a55eea'
+            const eventsCount = p.count || 1;
+            const markerRadius = Math.min(25, 4 + (eventsCount * 0.5));
             return (
               <CircleMarker
                 key={i}
                 center={[p.lat, p.lon]}
-                radius={5}
-                pathOptions={{ color, fillColor: color, fillOpacity: 0.75, weight: 1.5 }}
+                radius={markerRadius}
+                pathOptions={{ color, fillColor: color, fillOpacity: 0.6, weight: 1.5 }}
               >
                 <Popup>
                   <div className="text-xs leading-relaxed">
                     <p className="font-bold text-sm mb-1">{p.ip || 'Unknown IP'}</p>
                     <p>🌍 {p.country}</p>
                     <p>🎯 {p.type}</p>
+                    <p>🔥 <strong className="text-cyber-accent">{eventsCount}</strong> attempts tracked</p>
                   </div>
                 </Popup>
               </CircleMarker>

@@ -1040,7 +1040,7 @@ def get_geo_points():
         query = {
             # Fetch a wider recent window so high-volume cowrie events do not
             # crowd out lower-volume flask/dionaea points.
-            'size': 5000,
+            'size': 10000,
             'sort': [{'@timestamp': {'order': 'desc'}}],
             '_source': ['geoip.latitude', 'geoip.longitude', 'geoip.country_name',
                         'src_ip', 'honeypot_type'],
@@ -1056,7 +1056,7 @@ def get_geo_points():
         resp = requests.post(f'{ES_URL}/honeypot-*/_search', json=query, timeout=5)
         if resp.status_code == 200:
             hits = resp.json().get('hits', {}).get('hits', [])
-            points = []
+            grouped_points = {}
             type_counts = {}
             for h in hits:
                 src   = h.get('_source', {})
@@ -1065,18 +1065,30 @@ def get_geo_points():
                 lon   = geoip.get('longitude')
                 if lat is not None and lon is not None:
                     hp_type = src.get('honeypot_type', 'unknown')
-                    # Cap points per honeypot type to keep map balanced.
+                    ip = src.get('src_ip', 'Unknown IP')
+                    
+                    # Group identical attacking IPs into one clustered coordinate with a count weight
+                    key = f"{lat}-{lon}-{hp_type}-{ip}"
+                    if key in grouped_points:
+                        grouped_points[key]['count'] += 1
+                        continue
+                        
+                    # Cap distinct coordinates per honeypot type to keep map balanced.
                     current = type_counts.get(hp_type, 0)
                     if current >= 500:
                         continue
-                    points.append({
+                        
+                    grouped_points[key] = {
                         'lat':     lat,
                         'lon':     lon,
                         'country': geoip.get('country_name', 'Unknown'),
-                        'ip':      src.get('src_ip', ''),
+                        'ip':      ip,
                         'type':    hp_type,
-                    })
+                        'count':   1
+                    }
                     type_counts[hp_type] = current + 1
+                    
+            points = list(grouped_points.values())
             if points:  # If we got data from ES, return it
                 return jsonify({'points': points, 'source': 'elasticsearch'})
         
