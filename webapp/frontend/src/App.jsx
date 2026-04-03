@@ -165,6 +165,8 @@ export default function App() {
         isAdmin={isAdmin}
         health={health}
         isRefreshing={isRefreshing}
+        adminView={adminView}
+        setAdminView={setAdminView}
         onRefresh={refreshAll}
         onDeployAll={handleDeployAll}
         onShutdown={handleShutdown}
@@ -172,21 +174,6 @@ export default function App() {
       />
 
       <main className="max-w-screen-2xl mx-auto px-4 py-5 space-y-5 animate-fadeIn">
-
-        {/* Admin view selector */}
-        {isAdmin && (
-          <div className="flex items-center gap-2 justify-center mb-4">
-            {['dashboard', 'users', 'attacks'].map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setAdminView(tab)}
-                className={`px-3 py-1.5 rounded font-medium transition ${adminView === tab ? 'bg-cyber-accent text-black' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}
-              >
-                {tab === 'dashboard' ? 'Main Dashboard' : tab === 'users' ? 'User Management' : 'Attack Database'}
-              </button>
-            ))}
-          </div>
-        )}
 
         {isAdmin && adminView === 'users' && <UserAdminPanel />}
         {isAdmin && adminView === 'attacks' && <AttackAdminPanel />}

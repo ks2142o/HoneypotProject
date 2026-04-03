@@ -10,13 +10,13 @@ const HealthDot = ({ label, value }) => {
   )
 }
 
-export default function Header({ user, isAdmin, health, isRefreshing, onRefresh, onDeployAll, onShutdown, onLogout }) {
+export default function Header({ user, isAdmin, health, isRefreshing, adminView, setAdminView, onRefresh, onDeployAll, onShutdown, onLogout }) {
   return (
     <header
       className="sticky top-0 z-50 border-b border-cyber-border/60 backdrop-blur-md"
       style={{ background: 'linear-gradient(90deg, rgba(10,14,26,0.97) 0%, rgba(22,32,64,0.97) 50%, rgba(10,14,26,0.97) 100%)' }}
     >
-      <div className="max-w-screen-2xl mx-auto px-3 sm:px-4 py-3 flex items-center justify-between gap-3">
+      <div className="max-w-screen-2xl mx-auto px-3 sm:px-4 py-3 flex flex-wrap items-center justify-between gap-3">
 
         {/* Brand */}
         <div className="flex items-center gap-2.5 min-w-0">
@@ -26,27 +26,41 @@ export default function Header({ user, isAdmin, health, isRefreshing, onRefresh,
           </div>
           <div className="min-w-0">
             <h1 className="text-sm sm:text-base font-bold text-cyber-bright tracking-wide leading-none truncate">
-              HONEYPOT <span className="hidden sm:inline">THREAT INTELLIGENCE</span>
+              HONEYPOT <span className="hidden sm:inline">PLATFORM</span>
             </h1>
-            <p className="text-[10px] sm:text-[11px] text-cyber-muted font-mono mt-0.5 hidden xs:block">
-              Automated Defence Platform v2.0
-            </p>
           </div>
         </div>
 
+        {/* Navigation Links */}
+        {isAdmin && (
+          <div className="flex items-center gap-2 md:gap-4 mx-2">
+            {[
+              { id: 'dashboard', label: 'Main Dashboard' },
+              { id: 'attacks', label: 'Attack Database' },
+              { id: 'users', label: 'User Management' }
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setAdminView(tab.id)}
+                className={`text-xs md:text-sm font-medium transition-colors ${
+                  adminView === tab.id
+                    ? 'text-cyber-accent border-b border-cyber-accent'
+                    : 'text-cyber-muted hover:text-cyber-bright'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Right side */}
-        <div className="flex items-center gap-2 sm:gap-4 shrink-0">
+        <div className="flex items-center gap-2 sm:gap-4 shrink-0 mt-2 sm:mt-0 ml-auto">
 
           {/* Live indicator */}
           <div className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-cyber-green animate-pulse-slow shadow-glow-green" />
             <span className="hidden sm:inline text-xs text-cyber-muted font-mono tracking-widest">LIVE</span>
-          </div>
-
-          {/* Global access indicator */}
-          <div className="hidden sm:flex items-center gap-1.5 text-xs font-mono text-cyber-muted">
-            <span className="px-2 py-0.5 border border-cyber-border rounded">Public</span>
-            <span className="px-2 py-0.5 border border-cyber-border rounded">Network: 10.200.0.0/16</span>
           </div>
 
           {/* Component health — hidden on mobile */}

@@ -1,5 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import * as api from '../api';
+import { RefreshCw, Search, Trash2, Download, Filter, Target } from 'lucide-react';
+
+const HONEYPOT_COLOR = {
+  cowrie: 'text-cyber-green',
+  dionaea: 'text-cyber-blue',
+  flask: 'text-cyber-accent'
+};
 
 function AttackAdminPanel() {
   const [attacks, setAttacks] = useState([]);
@@ -10,8 +17,9 @@ function AttackAdminPanel() {
   const [eventFilter, setEventFilter] = useState('');
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-  const [autoRefresh, setAutoRefresh] = useState(true);
-  const PER_PAGE = 50;
+  const [autoRefresh, setAutoRefresh] = useState(false);
+
+  const PER_PAGE = 25;
 
   useEffect(() => {
     loadAttacks();
@@ -29,23 +37,18 @@ function AttackAdminPanel() {
     setLoading(true);
     setError('');
     try {
-      // Use the existing API but with admin access. Use /all to get complete set.
       const data = await api.allAttacks();
       let allAttacks = [];
       if (Array.isArray(data?.attacks)) {
         allAttacks = data.attacks;
       } else if (Array.isArray(data)) {
         allAttacks = data;
-      } else if (data && typeof data === 'object' && Array.isArray(data.attacks)) {
-        allAttacks = data.attacks;
       }
 
-      // Validate array fallback.
       if (!Array.isArray(allAttacks)) {
         throw new Error('Invalid backend response: attacks must be an array.');
       }
 
-      // Apply filters
       if (honeypotFilter) {
         allAttacks = allAttacks.filter(a => a.honeypot_type === honeypotFilter);
       }
@@ -68,49 +71,36 @@ function AttackAdminPanel() {
       const paginated = allAttacks.slice(start, start + PER_PAGE);
       setAttacks(paginated);
     } catch (err) {
-      const message = (err && err.message) ? err.message : String(err || 'Failed to load attacks');
-      if (message.includes('void 0')) {
-        console.error('Known issue: stale or corrupted JS bundle may be loaded (void 0 is not a function).');
-        setError('Browser JS bundle error detected. Clear cache + hard reload, and check that latest code is deployed.');
-      } else {
-        setError(message);
-      }
-      console.error('AttackAdminPanel loadAttacks error:', err);
+      setError(err.message || 'Failed to load attacks');
     } finally {
       setLoading(false);
     }
   };
 
   const handleDeleteAttack = async (attackId) => {
-    if (!attackId) {
-      setError('Delete not available for this record (missing ID)');
-      return;
-    }
-
-    if (!window.confirm('Are you sure you want to delete this attack record?')) return;
-
-    setLoading(true);
-    setError('');
+    if (!attackId) return;
+    if (!window.confirm('Delete this attack record?')) return;
     try {
       await api.deleteAttack(attackId);
-      await loadAttacks();
+      loadAttacks();
     } catch (err) {
-      setError(err.message || 'Failed to delete attack');
-    } finally {
-      setLoading(false);
+      alert('Delete failed: ' + err.message);
     }
   };
 
-  const exportData = () => {
+  const exportCSV = () => {
+    if (attacks.length === 0) {
+      alert('No data to export on this page.');
+      return;
+    }
     const csv = [
-      ['Timestamp', 'Source IP', 'Honeypot', 'Event', 'Username', 'Password', 'Command', 'Country'].join(','),
+      ['Timestamp', 'Source IP', 'Honeypot', 'Event', 'Credentials', 'Command', 'Country'].join(','),
       ...attacks.map(a => [
         a['@timestamp'] || '',
         a.src_ip || '',
         a.honeypot_type || '',
         a.event_type || '',
-        a.username || '',
-        a.password || '',
+        `${a.username || ''}:${a.password || ''}`,
         a.input || '',
         (a.geoip || {}).country_name || ''
       ].map(field => `"${field}"`).join(','))
@@ -125,157 +115,164 @@ function AttackAdminPanel() {
     URL.revokeObjectURL(url);
   };
 
-  const uniqueHoneypots = [...new Set(attacks.map(a => a.honeypot_type).filter(Boolean))];
-  const uniqueEvents = [...new Set(attacks.map(a => a.event_type).filter(Boolean))];
-
-  if (loading && attacks.length === 0) {
-    return <div className="text-center text-gray-300 py-8">Loading attack data...</div>;
-  }
-
   return (
-    <div className="card">
-      <h2 className="text-2xl font-bold text-white mb-6">Attack Database Management</h2>
-
-      {error && (
-        <div className="bg-red-900 border border-red-600 text-red-100 px-4 py-3 rounded mb-4">
-          {error}
+    <div className="card max-w-7xl mx-auto mt-6">
+      {/* Header and Controls */}
+      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6">
+        <div>
+          <h2 className="text-xl font-bold flex items-center gap-2 text-cyber-bright">
+            <Target className="text-cyber-accent" size={22} />
+            Global Attack Database
+          </h2>
+          <p className="text-xs text-cyber-muted mt-1 font-mono">
+            Detailed logging of all intercepted malicious events across honeypots.
+          </p>
         </div>
-      )}
 
-      {/* Filters and Actions */}
-      <div className="mb-6 space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <input
-            type="text"
-            placeholder="Search attacks..."
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            className="px-3 py-2 bg-gray-700 text-white rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <select
-            value={honeypotFilter}
-            onChange={(e) => setHoneypotFilter(e.target.value)}
-            className="px-3 py-2 bg-gray-700 text-white rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+        <div className="flex flex-wrap items-center gap-2">
+          {error && <span className="text-red-400 text-xs mr-2">{error}</span>}
+
+          <div className="relative">
+            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-cyber-muted" />
+            <input
+              type="text"
+              placeholder="Search IP, creds, commands..."
+              value={filter}
+              onChange={(e) => { setFilter(e.target.value); setPage(1); }}
+              className="cyber-input pl-8 w-48 text-xs"
+            />
+          </div>
+
+          <div className="relative hidden xs:block">
+            <Filter size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-cyber-muted" />
+            <select
+              value={honeypotFilter}
+              onChange={(e) => { setHoneypotFilter(e.target.value); setPage(1); }}
+              className="cyber-input pl-8 w-32 text-xs cursor-pointer appearance-none bg-no-repeat"
+            >
+              <option value="">All Services</option>
+              <option value="cowrie">Cowrie (SSH/Telnet)</option>
+              <option value="dionaea">Dionaea</option>
+              <option value="flask">Flask (HTTP)</option>
+            </select>
+          </div>
+
+          <button onClick={exportCSV} className="btn btn-ghost py-1.5 px-3 text-xs" title="Export page to CSV">
+            <Download size={14} /> Export
+          </button>
+          
+          <button 
+            onClick={() => loadAttacks()} 
+            className="btn btn-primary py-1.5 px-3 text-xs flex items-center gap-1.5"
           >
-            <option value="">All Honeypots</option>
-            {uniqueHoneypots.map(type => (
-              <option key={type} value={type}>{type}</option>
-            ))}
-          </select>
-          <select
-            value={eventFilter}
-            onChange={(e) => setEventFilter(e.target.value)}
-            className="px-3 py-2 bg-gray-700 text-white rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="">All Events</option>
-            {uniqueEvents.map(type => (
-              <option key={type} value={type}>{type}</option>
-            ))}
-          </select>
-          <button
-            onClick={exportData}
-            className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded font-semibold transition"
-          >
-            Export CSV
+            <RefreshCw size={14} className={loading && !autoRefresh ? 'animate-spin' : ''} />
+            Refresh
           </button>
         </div>
-        <button
-          onClick={loadAttacks}
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-semibold transition"
-        >
-          Apply Filters
-        </button>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <div className="bg-gray-700 rounded-lg p-4">
-          <div className="text-2xl font-bold text-blue-400">{attacks.length}</div>
-          <div className="text-gray-300">Records Shown</div>
-        </div>
-        <div className="bg-gray-700 rounded-lg p-4">
-          <div className="text-2xl font-bold text-green-400">{uniqueHoneypots.length}</div>
-          <div className="text-gray-300">Honeypot Types</div>
-        </div>
-        <div className="bg-gray-700 rounded-lg p-4">
-          <div className="text-2xl font-bold text-yellow-400">{uniqueEvents.length}</div>
-          <div className="text-gray-300">Event Types</div>
-        </div>
-        <div className="bg-gray-700 rounded-lg p-4">
-          <div className="text-2xl font-bold text-purple-400">{page}/{totalPages}</div>
-          <div className="text-gray-300">Current Page</div>
-        </div>
-      </div>
-
-      {/* Attacks Table */}
-      <div className="overflow-x-auto">
-        <table className="w-full text-left text-gray-300">
-          <thead className="border-b border-gray-600">
+      {/* Table */}
+      <div className="overflow-x-auto rounded-xl border border-cyber-border/50">
+        <table className="data-table w-full text-left">
+          <thead>
             <tr>
-              <th className="px-4 py-2">Timestamp</th>
-              <th className="px-4 py-2">Source IP</th>
-              <th className="px-4 py-2">Honeypot</th>
-              <th className="px-4 py-2">Event</th>
-              <th className="px-4 py-2">Credentials</th>
-              <th className="px-4 py-2">Command</th>
-              <th className="px-4 py-2">Country</th>
-              <th className="px-4 py-2">Actions</th>
+              <th>Timestamp</th>
+              <th>Source IP</th>
+              <th>Honeypot</th>
+              <th>Event</th>
+              <th>Credentials</th>
+              <th>Command / Input</th>
+              <th>Country</th>
+              <th className="text-right">Action</th>
             </tr>
           </thead>
           <tbody>
-            {attacks.map((attack, index) => (
-              <tr key={index} className="border-b border-gray-700 hover:bg-gray-700">
-                <td className="px-4 py-3 font-mono text-xs">
-                  {attack['@timestamp'] ? new Date(attack['@timestamp']).toLocaleString() : '—'}
-                </td>
-                <td className="px-4 py-3 font-mono text-blue-400">{attack.src_ip || '—'}</td>
-                <td className="px-4 py-3 text-green-400">{attack.honeypot_type || '—'}</td>
-                <td className="px-4 py-3 text-yellow-400">{attack.event_type || '—'}</td>
-                <td className="px-4 py-3 text-purple-400">
-                  {attack.username && attack.password ? `${attack.username}:${attack.password}` :
-                   attack.username ? attack.username :
-                   attack.password ? `:${attack.password}` : '—'}
-                </td>
-                <td className="px-4 py-3 font-mono text-xs text-gray-400 max-w-xs truncate">
-                  {attack.input || '—'}
-                </td>
-                <td className="px-4 py-3 text-cyan-400">
-                  {(attack.geoip || {}).country_name || '—'}
-                </td>
-                <td className="px-4 py-3">
-                  <button
-                    onClick={() => handleDeleteAttack(attack.id)}
-                    className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white text-xs rounded"
-                  >
-                    Delete
-                  </button>
-                </td>
-              </tr>
-            ))}
+            {loading && attacks.length === 0 ? (
+              <tr><td colSpan="8" className="text-center py-8 text-cyber-muted">Loading database...</td></tr>
+            ) : attacks.length === 0 ? (
+              <tr><td colSpan="8" className="text-center py-8 text-cyber-muted">No attacks found for the given filters.</td></tr>
+            ) : (
+              attacks.map((a, i) => {
+                const ts  = a['@timestamp'] ? new Date(a['@timestamp']).toLocaleString() : '—'
+                const ip  = a.src_ip || '—'
+                const hp  = a.honeypot_type || '—'
+                const ev  = a.event_type || '—'
+                const hpColor = HONEYPOT_COLOR[hp] || 'text-cyber-green'
+                
+                let creds = '—'
+                if (a.username && a.password) creds = `${a.username}:${a.password}`
+                else if (a.username) creds = a.username
+                else if (a.password) creds = `:${a.password}`
+                
+                const cmd = a.input || a.message || '—'
+                const cc  = (a.geoip && a.geoip.country_name) ? a.geoip.country_name : '—'
+
+                return (
+                  <tr key={a.id || i} className="hover:bg-white/5 transition-colors">
+                    <td className="text-cyber-muted font-mono text-[11px] whitespace-nowrap">{ts}</td>
+                    <td className="text-cyber-accent font-mono text-[11px] font-bold">{ip}</td>
+                    <td className={`font-medium text-[11px] ${hpColor}`}>{hp.toUpperCase()}</td>
+                    <td className="text-cyber-yellow text-[11px]">{ev}</td>
+                    <td className="text-cyber-purple font-mono text-[11px]">{creds}</td>
+                    <td className="text-cyber-muted text-[11px] max-w-xs truncate" title={cmd}>{cmd}</td>
+                    <td className="text-cyber-bright text-[11px]">{cc}</td>
+                    <td className="text-right">
+                      {a.id && (
+                        <button
+                          onClick={() => handleDeleteAttack(a.id)}
+                          className="text-red-400 hover:text-red-300 p-1 rounded hover:bg-red-400/10 transition-colors"
+                          title="Delete Record"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })
+            )}
           </tbody>
         </table>
       </div>
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-between mt-6">
-          <button
-            onClick={() => setPage(p => Math.max(1, p - 1))}
-            disabled={page === 1}
-            className="px-4 py-2 bg-gray-600 hover:bg-gray-700 disabled:bg-gray-800 text-white rounded"
-          >
-            Previous
-          </button>
-          <span className="text-gray-300">
-            Page {page} of {totalPages}
+        <div className="flex items-center justify-between mt-4 border-t border-cyber-border/30 pt-4">
+          <span className="text-xs text-cyber-muted">
+            Page <strong className="text-cyber-bright">{page}</strong> of {totalPages}
           </span>
-          <button
-            onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-            disabled={page === totalPages}
-            className="px-4 py-2 bg-gray-600 hover:bg-gray-700 disabled:bg-gray-800 text-white rounded"
-          >
-            Next
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              disabled={page === 1}
+              onClick={() => setPage(p => p - 1)}
+              className="btn btn-ghost py-1 px-3 text-xs disabled:opacity-30"
+            >
+              Previous
+            </button>
+            <div className="flex items-center mx-2 gap-1 hidden sm:flex">
+              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                let p = page <= 3 ? i + 1 : page - 2 + i;
+                if (totalPages - page < 2) p = totalPages - 4 + i;
+                if (p < 1 || p > totalPages) return null;
+                return (
+                  <button
+                    key={p}
+                    onClick={() => setPage(p)}
+                    className={`min-w-[28px] h-7 rounded text-xs transition ${page === p ? 'bg-cyber-accent text-black font-bold' : 'text-cyber-muted hover:bg-white/10'}`}
+                  >
+                    {p}
+                  </button>
+                )
+              })}
+            </div>
+            <button
+              disabled={page === totalPages}
+              onClick={() => setPage(p => p + 1)}
+              className="btn btn-ghost py-1 px-3 text-xs disabled:opacity-30"
+            >
+              Next
+            </button>
+          </div>
         </div>
       )}
     </div>

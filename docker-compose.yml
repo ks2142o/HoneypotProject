@@ -13,9 +13,6 @@
 networks:
   honeypot-network:
     driver: bridge
-    ipam:
-      config:
-        - subnet: ${SUBNET}
 
 volumes:
   elasticsearch-data:
