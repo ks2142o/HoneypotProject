@@ -69,13 +69,17 @@ function ServiceCard({ name, info, onDeploy, isAdmin }) {
       <button
         disabled={!isAdmin}
         className={`mt-auto pt-3 w-full text-[11px] py-1.5 rounded-lg border
-                    transition-all duration-200 flex items-center justify-center gap-1.5
+                    transition-all duration-200 flex items-center justify-center gap-1.5 font-bold uppercase tracking-wider
                     ${!isAdmin
                       ? 'bg-gray-700/20 border-gray-600/20 text-gray-500 cursor-not-allowed'
                       : running
-                      ? 'bg-cyber-accent/5 border-cyber-accent/20 text-cyber-accent hover:bg-cyber-accent/10'
-                      : 'bg-cyber-green/5 border-cyber-green/20 text-cyber-green hover:bg-cyber-green/10'}`}
-        onClick={() => isAdmin && onDeploy(name)}
+                      ? 'bg-cyber-yellow/10 border-cyber-yellow/30 text-cyber-yellow hover:bg-cyber-yellow/20 hover:shadow-[0_0_10px_rgba(255,191,0,0.3)]'
+                      : 'bg-cyber-green/10 border-cyber-green/30 text-cyber-green hover:bg-cyber-green/20 hover:shadow-[0_0_10px_rgba(0,255,128,0.3)]'}`}
+        onClick={() => {
+          if (!isAdmin) return;
+          if (running && !window.confirm(`Restart ${meta.label}?`)) return;
+          onDeploy(name);
+        }}
         title={isAdmin ? undefined : 'Admin only'}
       >
         {running ? <RotateCcw size={11} /> : <Play size={11} />}

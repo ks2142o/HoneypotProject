@@ -322,16 +322,29 @@ def _detect_compose_cmd() -> list:
 COMPOSE_CMD = _detect_compose_cmd()
 ES_URL = os.environ.get('ELASTICSEARCH_URL', 'http://elasticsearch:9200')
 
-# Canonical container name mapping
-CONTAINER_NAMES = {
-    'elasticsearch': 'elasticsearch',
-    'logstash':      'logstash',
-    'kibana':        'kibana',
-    'webapp':        'webapp',
-    'cowrie':        'cowrie-honeypot',
-    'dionaea':       'dionaea-honeypot',
-    'flask':         'flask-honeypot',
-}
+SERVICES_LIST = [
+    'elasticsearch',
+    'logstash',
+    'kibana',
+    'webapp',
+    'cowrie',
+    'dionaea',
+    'flask',
+]
+
+def _get_docker_container(service_name):
+    """Logically discover the container using Docker Compose labels instead of brittle fixed names."""
+    if not docker_client:
+        raise RuntimeError("Docker client unavailable")
+    
+    # Check by label first: safe, scalable, prevents naming conflicts
+    project_name = os.environ.get('COMPOSE_PROJECT_NAME', 'honeypot-project')
+    filters = {'label': [f'com.docker.compose.project={project_name}', f'com.docker.compose.service={service_name}']}
+    containers = docker_client.containers.list(filters=filters)
+    if containers:
+        return containers[0]
+        
+    raise docker.errors.NotFound(f"Container for {service_name} not found")
 
 
 # ─────────────────────────────────────────
@@ -614,13 +627,11 @@ def delete_user(user_id):
 @app.route('/api/status')
 @login_required
 def get_status():
-    """Return running status for every managed container."""
+    """Return running status for every managed container using labels."""
     containers = {}
-    for service, container_name in CONTAINER_NAMES.items():
+    for service in SERVICES_LIST:
         try:
-            if docker_client is None:
-                raise RuntimeError("Docker client unavailable")
-            container = docker_client.containers.get(container_name)
+            container = _get_docker_container(service)
             containers[service] = {
                 'status': container.status,
                 'health': container.attrs.get('State', {}).get('Health', {}).get('Status', 'none'),
@@ -642,19 +653,28 @@ def get_status():
 @app.route('/api/deploy/<service>', methods=['POST'])
 @admin_required
 def deploy_service(service):
-    """Start a single service via docker-compose."""
-    if service not in CONTAINER_NAMES:
+    """Start or restart a single service via docker-compose safely."""
+    if service not in SERVICES_LIST:
         return jsonify({'success': False, 'error': f'Unknown service: {service}'}), 400
     try:
+        # Determine if it's already running to either restart or up
+        action = ['up', '-d', service]
+        try:
+            container = _get_docker_container(service)
+            if container.status == 'running':
+                action = ['restart', service]
+        except docker.errors.NotFound:
+            pass # Use 'up -d' if not found
+
         result = subprocess.run(
-            COMPOSE_CMD + ['up', '-d', service],
+            COMPOSE_CMD + action,
             cwd=PROJECT_PATH,
             capture_output=True,
             text=True,
             timeout=120,
         )
         if result.returncode == 0:
-            return jsonify({'success': True, 'message': f'{service} deployed successfully'})
+            return jsonify({'success': True, 'message': f'{service} {action[0]}ed successfully'})
         return jsonify({'success': False, 'error': result.stderr or result.stdout}), 500
     except subprocess.TimeoutExpired:
         return jsonify({'success': False, 'error': 'Deployment timed out'}), 504
@@ -710,10 +730,10 @@ def shutdown():
 @login_required
 def get_logs(service):
     """Return last 200 log lines for a container."""
-    if service not in CONTAINER_NAMES:
+    if service not in SERVICES_LIST:
         return jsonify({'error': f'Unknown service: {service}'}), 400
     try:
-        container = docker_client.containers.get(CONTAINER_NAMES[service])
+        container = _get_docker_container(service)
         logs = container.logs(tail=200, timestamps=True).decode('utf-8', errors='replace')
         return jsonify({'logs': logs, 'service': service})
     except Exception as e:

@@ -1,4 +1,4 @@
-import { Play, ExternalLink, HeartPulse, Activity } from 'lucide-react'
+import { Play, RotateCcw, ExternalLink, HeartPulse, Activity } from 'lucide-react'
 
 const HEALTH_COLOR = (v) => {
   if (['healthy', 'green'].includes(v))              return 'text-cyber-green'
@@ -28,12 +28,12 @@ export default function ControlPanel({ health, onDeployAll, isAdmin }) {
           </div>
         ) : (
           <button
-            className="btn btn-success w-full justify-center"
+            className="btn btn-warning w-full justify-center shadow-[0_0_10px_rgba(255,191,0,0.2)]"
             onClick={() => {
-              if (window.confirm('Start all stopped services?')) onDeployAll()
+              if (window.confirm('WARNING: Are you sure you want to REBOOT all managed services? This may momentarily break active ELK pipelines and current Honeypot sessions.')) onDeployAll()
             }}
           >
-            <Play size={14} /> Start All Services
+            <RotateCcw size={14} /> Restart All Services
           </button>
         )}
       </div>

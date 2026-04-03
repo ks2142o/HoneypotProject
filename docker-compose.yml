@@ -29,7 +29,6 @@ services:
   # ============================================
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:${ELASTIC_VERSION}
-    container_name: elasticsearch
     hostname: elasticsearch
 
     environment:
@@ -74,7 +73,6 @@ services:
   # ============================================
   logstash:
     image: docker.elastic.co/logstash/logstash:${ELASTIC_VERSION}
-    container_name: logstash
     hostname: logstash
 
     environment:
@@ -129,7 +127,6 @@ services:
   # ============================================
   kibana:
     image: docker.elastic.co/kibana/kibana:${ELASTIC_VERSION}
-    container_name: kibana
     hostname: kibana
 
     environment:
@@ -173,7 +170,6 @@ services:
   # ============================================
   cowrie:
     image: cowrie/cowrie:latest
-    container_name: cowrie-honeypot
     hostname: srv01
 
     environment:
@@ -209,7 +205,6 @@ services:
   # ============================================
   dionaea:
     image: dinotools/dionaea:latest
-    container_name: dionaea-honeypot
     hostname: dionaea
 
     environment:
@@ -255,7 +250,6 @@ services:
     build:
       context: ./honeypots/flask-honeypot
       dockerfile: Dockerfile
-    container_name: flask-honeypot
     hostname: webserver
 
     environment:
@@ -290,7 +284,6 @@ services:
       dockerfile: Dockerfile
     image: honeypot/webapp:latest
     pull_policy: build
-    container_name: webapp
     hostname: webapp
 
     environment:
@@ -340,7 +333,6 @@ services:
   # ============================================
   ngrok:
     image: ngrok/ngrok:latest
-    container_name: ngrok-tunnel
     profiles: ["expose"]
     restart: unless-stopped
 
