@@ -198,6 +198,8 @@ function AttackAdminPanel() {
                 const hp  = a.honeypot_type || '—'
                 const ev  = a.event_type || '—'
                 const hpColor = HONEYPOT_COLOR[hp] || 'text-cyber-green'
+                const numericId = Number(a.id)
+                const canDelete = Number.isInteger(numericId) && String(numericId) === String(a.id)
                 
                 let creds = '—'
                 if (a.username && a.password) creds = `${a.username}:${a.password}`
@@ -217,9 +219,9 @@ function AttackAdminPanel() {
                     <td className="text-cyber-muted text-[11px] max-w-xs truncate" title={cmd}>{cmd}</td>
                     <td className="text-cyber-bright text-[11px]">{cc}</td>
                     <td className="text-right">
-                      {a.id && (
+                      {canDelete && (
                         <button
-                          onClick={() => handleDeleteAttack(a.id)}
+                          onClick={() => handleDeleteAttack(numericId)}
                           className="text-red-400 hover:text-red-300 p-1 rounded hover:bg-red-400/10 transition-colors"
                           title="Delete Record"
                         >

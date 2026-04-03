@@ -29,7 +29,7 @@ An automated, containerised honeypot deployment and threat intelligence system b
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐ │
 │  │   Cowrie    │  │  Dionaea    │  │     Flask Honeypot      │ │
 │  │  SSH/Telnet │  │ Multi-proto │  │  HTTP catch-all logger  │ │
-│  │ :2222/:2223 │  │  :21/:445…  │  │         :8080           │ │
+│  │ :2222/:2323 │  │ :2121/:4445… │  │        :18080           │ │
 │  └──────┬──────┘  └──────┬──────┘  └────────────┬────────────┘ │
 │         │                │                        │              │
 │         └────────────────┴──────────┬─────────────┘             │
@@ -49,7 +49,7 @@ An automated, containerised honeypot deployment and threat intelligence system b
 │                 ▼                                     ▼          │
 │       ┌─────────────────┐               ┌────────────────────┐  │
 │       │     Kibana      │               │   React Dashboard  │  │
-│       │  dashboards     │               │  Flask API :5000   │  │
+│       │  dashboards     │               │  Flask API :5500   │  │
 │       │    :5601        │               │  (this project)    │  │
 │       └─────────────────┘               └────────────────────┘  │
 └────────────────────────────────────────────────────────────────┘
@@ -101,8 +101,8 @@ nano .env
 make deploy
 
 # 5. Open the dashboard
-xdg-open http://localhost:5000   # Linux / WSL2
-# or browse manually to http://localhost:5000
+xdg-open http://localhost:5500   # Linux / WSL2
+# or browse manually to http://localhost:5500
 ```
 
 ## Dashboard Authentication
@@ -121,8 +121,8 @@ Then proceed with:
 
 ```bash
 # 6. Verify auth login
-curl -X POST -H 'Content-Type: application/json' -d '{"username":"<admin>","password":"<pass>"}' http://localhost:5000/api/auth/login
-curl -b cookies.txt http://localhost:5000/api/auth/me
+curl -X POST -H 'Content-Type: application/json' -d '{"username":"<admin>","password":"<pass>"}' http://localhost:5500/api/auth/login
+curl -b cookies.txt http://localhost:5500/api/auth/me
 ```
 
 That's it. `make deploy` does everything: it builds the React frontend inside Docker (no local Node required), starts ES → waits for health → starts Logstash → Kibana → honeypots → webapp.
@@ -222,16 +222,16 @@ make purge-images     # DESTRUCTIVE: purge + remove images
 
 | Service | Port | Protocol | Description |
 |---|---|---|---|
-| React Dashboard | **5000** | HTTP | Main management UI (this project) |
+| React Dashboard | **5500** | HTTP | Main management UI (this project) |
 | Kibana | **5601** | HTTP | Elasticsearch visualisation |
 | Elasticsearch | **9201** | HTTP | REST API & data store |
 | Logstash monitoring | **9600** | HTTP | Logstash metrics API |
 | Cowrie SSH | **2222** | SSH | SSH honeypot |
-| Cowrie Telnet | **2223** | Telnet | Telnet honeypot |
-| Flask HTTP trap | **8080** | HTTP | HTTP honeypot (logs all requests) |
+| Cowrie Telnet | **2323** | Telnet | Telnet honeypot |
+| Flask HTTP trap | **18080** | HTTP | HTTP honeypot (logs all requests) |
 | Dionaea FTP | **2121** | FTP | FTP honeypot |
-| Dionaea SMB | **445** | SMB | SMB/Windows honeypot |
-| Dionaea MySQL | **3306** | MySQL | MySQL honeypot |
+| Dionaea SMB | **4445** | SMB | SMB/Windows honeypot |
+| Dionaea MySQL | **4306** | MySQL | MySQL honeypot |
 
 ---
 
@@ -306,8 +306,11 @@ ELASTIC_PASSWORD=changeme123      # ← CHANGE THIS
 
 # Ports
 COWRIE_SSH_PORT=2222
-COWRIE_TELNET_PORT=2223
-FLASK_HTTP_PORT=8080
+COWRIE_TELNET_PORT=2323
+FLASK_HTTP_PORT=18080
+
+# Auto-remap conflicted host ports during deployment
+AUTO_REMAP_PORTS_ON_CONFLICT=1
 
 # Memory (tune to your system)
 ES_JAVA_OPTS=-Xms512m -Xmx512m
@@ -325,7 +328,7 @@ TZ=Asia/Karachi
 
 ### Data Flow
 
-1. **Attackers** connect to the exposed honeypot ports (SSH 2222, HTTP 8080, FTP 2121, SMB 445, etc.)
+1. **Attackers** connect to the exposed honeypot ports (SSH 2222, HTTP 18080, FTP 2121, SMB 4445, etc.)
 2. **Cowrie** emulates a real SSH/Telnet server, records credentials tried and commands run, writes JSON logs to `logs/cowrie/`
 3. **Dionaea** captures multi-protocol attack traffic and malware samples, writes to `logs/dionaea/`
 4. **Flask HTTP trap** logs every HTTP request (method, URL, headers, body) to `logs/flask/`
@@ -374,7 +377,7 @@ make test
 
 # Individual test categories
 make test-health   # HTTP 200 checks on all endpoints
-make test-ports    # TCP port availability (5000, 5601, 9201, 8080, 2222, 2223)
+make test-ports    # TCP port availability (5500, 5601, 9201, 18080, 2222, 2323)
 make test-es       # Insert + query a document to verify the ES pipeline
 make test-ssh      # Verify Cowrie SSH is responding on port 2222
 ```
@@ -387,9 +390,9 @@ ssh -p 2222 admin@localhost                          # manual test
 nmap -p 2222 --script ssh-brute localhost            # automated
 
 # HTTP attack simulation
-curl http://localhost:8080/admin
-curl http://localhost:8080/wp-login.php
-curl -X POST http://localhost:8080/ -d "user=admin&pass=123"
+curl http://localhost:18080/admin
+curl http://localhost:18080/wp-login.php
+curl -X POST http://localhost:18080/ -d "user=admin&pass=123"
 
 # Check events arrived in Elasticsearch
 make attack-count
@@ -435,7 +438,7 @@ make restart-webapp
 
 ```bash
 # Find and kill the conflicting process
-sudo lsof -i :9201    # or :5601, :5000, etc.
+sudo lsof -i :9201    # or :5601, :5500, etc.
 sudo kill -9 <PID>
 ```
 

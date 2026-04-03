@@ -11,14 +11,15 @@ PROJECT_DIR    := $(shell pwd)
 ENV_FILE       := .env
 DEPLOY_SCRIPT  := deploy.py
 FRONTEND_DIR   := webapp/frontend
+PORT_FIX_SCRIPT := scripts/resolve_port_conflicts.py
 
 # Read port values from .env so Makefile health/url targets stay in sync
-FLASK_HTTP_PORT    := $(shell grep -E '^FLASK_HTTP_PORT=' $(ENV_FILE) 2>/dev/null | cut -d= -f2 | tr -d ' \t' || echo 8181)
-WEBAPP_PORT        := $(shell grep -E '^WEBAPP_PORT='     $(ENV_FILE) 2>/dev/null | cut -d= -f2 | tr -d ' \t' || echo 5000)
+FLASK_HTTP_PORT    := $(shell grep -E '^FLASK_HTTP_PORT=' $(ENV_FILE) 2>/dev/null | cut -d= -f2 | tr -d ' \t' || echo 18080)
+WEBAPP_PORT        := $(shell grep -E '^WEBAPP_PORT='     $(ENV_FILE) 2>/dev/null | cut -d= -f2 | tr -d ' \t' || echo 5500)
 KIBANA_PORT        := $(shell grep -E '^KIBANA_PORT='     $(ENV_FILE) 2>/dev/null | cut -d= -f2 | tr -d ' \t' || echo 5601)
 ELASTICSEARCH_PORT := $(shell grep -E '^ELASTICSEARCH_PORT=' $(ENV_FILE) 2>/dev/null | cut -d= -f2 | tr -d ' \t' || echo 9201)
 COWRIE_SSH_PORT    := $(shell grep -E '^COWRIE_SSH_PORT=' $(ENV_FILE) 2>/dev/null | cut -d= -f2 | tr -d ' \t' || echo 2222)
-COWRIE_TELNET_PORT := $(shell grep -E '^COWRIE_TELNET_PORT=' $(ENV_FILE) 2>/dev/null | cut -d= -f2 | tr -d ' \t' || echo 2223)
+COWRIE_TELNET_PORT := $(shell grep -E '^COWRIE_TELNET_PORT=' $(ENV_FILE) 2>/dev/null | cut -d= -f2 | tr -d ' \t' || echo 2323)
 
 # Detect docker compose command (v2 plugin vs legacy standalone).
 # Strategy:
@@ -161,7 +162,7 @@ cloud-setup: ## Prepare a cloud VM (Oracle/AWS/GCP) for deployment — run once 
 	@printf "       8 GB  →  ES=-Xms1g -Xmx1g    LS=-Xms512m -Xmx512m\n"
 	@printf "       16 GB →  ES=-Xms2g -Xmx2g    LS=-Xms1g   -Xmx1g\n"
 	@printf "       24 GB →  ES=-Xms4g -Xmx4g    LS=-Xms2g   -Xmx2g\n"
-	@printf "  3. Open firewall ports: 2222 2223 $(FLASK_HTTP_PORT) $(WEBAPP_PORT)\n"
+	@printf "  3. Open firewall ports: $(COWRIE_SSH_PORT) $(COWRIE_TELNET_PORT) $(FLASK_HTTP_PORT) $(WEBAPP_PORT)\n"
 	@printf "  4. Run: make deploy\n\n"
 
 .PHONY: env
@@ -190,6 +191,12 @@ dirs: ## Create required log and data directory tree
 .PHONY: setup
 setup: check-deps vm-fix env dirs ## Full first-time setup (deps + kernel + env + dirs)
 	@$(call ok, Setup complete — run 'make deploy' to start the platform)
+
+.PHONY: fix-ports
+fix-ports: ## Auto-remap conflicted host ports in .env
+	$(call log, Resolving host port conflicts from .env…)
+	@python3 $(PORT_FIX_SCRIPT) --env-file $(ENV_FILE)
+	@$(call ok, Port conflict scan complete)
 
 
 # ==============================================================================
@@ -227,6 +234,7 @@ frontend-dev: ## Start Vite dev server with HMR (requires Node + Flask running s
 .PHONY: deploy
 deploy: setup ## Full deployment — ELK stack + honeypots + webapp (recommended)
 	$(call log, Starting full deployment via deploy.py…)
+	@$(MAKE) --no-print-directory fix-ports
 	@python3 $(DEPLOY_SCRIPT) --mode=full --force
 	@$(call ok, Deployment complete)
 	@$(MAKE) --no-print-directory urls
@@ -234,6 +242,7 @@ deploy: setup ## Full deployment — ELK stack + honeypots + webapp (recommended
 .PHONY: up
 up: ## Start all services with docker compose (images must already be built)
 	$(call log, Starting all services…)
+	@$(MAKE) --no-print-directory fix-ports
 	@$(DOCKER_COMPOSE) -f $(COMPOSE_FILE) up -d
 	@$(call ok, All services started)
 	@$(MAKE) --no-print-directory urls
@@ -241,20 +250,23 @@ up: ## Start all services with docker compose (images must already be built)
 .PHONY: deploy-elk
 deploy-elk: vm-fix ## Deploy ELK stack only (Elasticsearch + Logstash + Kibana)
 	$(call log, Deploying ELK stack…)
+	@$(MAKE) --no-print-directory fix-ports
 	@python3 $(DEPLOY_SCRIPT) --mode=elk-only --force
 	@$(call ok, ELK stack deployed)
 
 .PHONY: deploy-honeypots
 deploy-honeypots: ## Deploy honeypots only (Cowrie + Dionaea + Flask)
 	$(call log, Deploying honeypots…)
+	@$(MAKE) --no-print-directory fix-ports
 	@python3 $(DEPLOY_SCRIPT) --mode=honeypots-only --force
 	@$(call ok, Honeypots deployed)
 
 .PHONY: deploy-webapp
 deploy-webapp: build-webapp ## Build and deploy the management webapp only
 	$(call log, Deploying webapp…)
+	@$(MAKE) --no-print-directory fix-ports
 	@$(DOCKER_COMPOSE) -f $(COMPOSE_FILE) up -d webapp
-	@$(call ok, Webapp deployed at http://localhost:5000)
+	@$(call ok, Webapp deployed at http://localhost:$(WEBAPP_PORT))
 
 .PHONY: expose
 expose: ## Start ngrok tunnels to expose honeypots to the internet (requires NGROK_AUTHTOKEN in .env)
@@ -383,9 +395,9 @@ attack-count: ## Show total attack event count across all honeypot indices
 	  || $(call err, Elasticsearch is not responding)
 
 .PHONY: seed
-seed: ## Inject 600 fake attack events into Elasticsearch for demo/testing
-	$(call log, Seeding Elasticsearch with demo attack data…)
-	@python3 scripts/seed_attacks.py --es http://localhost:$(ELASTICSEARCH_PORT)
+seed: ## Disabled: fake attack generation was removed to preserve real incident data
+	$(call warn, Fake attack seeding is disabled in this project.)
+	@printf "Use real honeypot traffic or replay real logs instead.\n"
 
 
 # ==============================================================================

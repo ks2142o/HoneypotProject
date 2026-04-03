@@ -9,6 +9,7 @@ from flask import Flask, jsonify, request, send_from_directory, session
 import docker
 import subprocess
 import os
+import re
 from datetime import datetime, timedelta
 import sqlite3
 import secrets
@@ -255,7 +256,7 @@ def get_attacks_from_db(limit=50, honeypot_type=None, event_type=None):
         cursor = conn.cursor()
         
         query = '''
-            SELECT timestamp, src_ip, honeypot_type, event_type, username, password,
+            SELECT id, timestamp, src_ip, honeypot_type, event_type, username, password,
                    input, http_method, request_url, message, country_name, city_name,
                    latitude, longitude, raw_data
             FROM attacks
@@ -308,6 +309,56 @@ def get_attacks_from_db(limit=50, honeypot_type=None, event_type=None):
         return []
 
 
+def _terms_agg_from_db(field_name, limit=10, where_clause=None):
+    """Build Elasticsearch-like terms buckets from SQLite for offline fallback."""
+    conn = get_db()
+    cursor = conn.cursor()
+
+    query = f"SELECT {field_name} AS key, COUNT(*) AS doc_count FROM attacks"
+    params = []
+    if where_clause:
+        query += f" WHERE {where_clause}"
+    query += f" GROUP BY {field_name} ORDER BY doc_count DESC LIMIT ?"
+    params.append(limit)
+
+    cursor.execute(query, params)
+    rows = cursor.fetchall()
+    conn.close()
+
+    buckets = []
+    for row in rows:
+        key = row['key'] if row['key'] is not None else 'Unknown'
+        if str(key).strip() == '':
+            continue
+        buckets.append({'key': key, 'doc_count': row['doc_count']})
+    return buckets
+
+
+def _timeline_from_db(limit_hours=24):
+    """Aggregate hourly timeline from SQLite timestamps as a fallback for charts."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT timestamp FROM attacks WHERE timestamp IS NOT NULL ORDER BY timestamp DESC LIMIT 10000')
+    rows = cursor.fetchall()
+    conn.close()
+
+    buckets = {}
+    for row in rows:
+        raw_ts = row['timestamp']
+        if not raw_ts:
+            continue
+        try:
+            ts = datetime.fromisoformat(str(raw_ts).replace('Z', '+00:00'))
+        except ValueError:
+            continue
+        key = ts.replace(minute=0, second=0, microsecond=0).isoformat().replace('+00:00', 'Z')
+        buckets[key] = buckets.get(key, 0) + 1
+
+    # Keep latest N buckets but return in chronological order for charts
+    sorted_items = sorted(buckets.items())[-limit_hours:]
+    return [{'key_as_string': k, 'doc_count': v} for k, v in sorted_items]
+
+
 def _detect_compose_cmd() -> list:
     """Return ['docker', 'compose'] if the v2 plugin is available, else ['docker-compose']."""
     for cmd in (['docker', 'compose'], ['docker-compose']):
@@ -321,6 +372,7 @@ def _detect_compose_cmd() -> list:
 
 COMPOSE_CMD = _detect_compose_cmd()
 ES_URL = os.environ.get('ELASTICSEARCH_URL', 'http://elasticsearch:9200')
+ENV_FILE_PATH = os.path.join(PROJECT_PATH, '.env')
 
 SERVICES_LIST = [
     'elasticsearch',
@@ -331,6 +383,232 @@ SERVICES_LIST = [
     'dionaea',
     'flask',
 ]
+
+PORT_ENV_KEYS = [
+    'ELASTICSEARCH_PORT',
+    'KIBANA_PORT',
+    'LOGSTASH_BEATS_PORT',
+    'LOGSTASH_API_PORT',
+    'WEBAPP_PORT',
+    'COWRIE_SSH_PORT',
+    'COWRIE_TELNET_PORT',
+    'DIONAEA_FTP_PORT',
+    'DIONAEA_DAYTIME_PORT',
+    'DIONAEA_RPC_PORT',
+    'DIONAEA_HTTPS_PORT',
+    'DIONAEA_SMB_PORT',
+    'DIONAEA_MSSQL_PORT',
+    'DIONAEA_MYSQL_PORT',
+    'DIONAEA_SIP_PORT',
+    'DIONAEA_SIPS_PORT',
+    'FLASK_HTTP_PORT',
+]
+
+
+def _is_truthy(value):
+    return str(value).strip().lower() in {'1', 'true', 'yes', 'on'}
+
+
+def _read_env_values():
+    values = {}
+    if not os.path.exists(ENV_FILE_PATH):
+        return values
+    try:
+        with open(ENV_FILE_PATH, 'r') as env_file:
+            for raw_line in env_file:
+                line = raw_line.strip()
+                if not line or line.startswith('#') or '=' not in line:
+                    continue
+                key, val = line.split('=', 1)
+                values[key.strip()] = val.strip()
+    except OSError:
+        return values
+    return values
+
+
+def _write_env_updates(updated_values):
+    """Persist key=value updates in .env while preserving comments/order."""
+    if not os.path.exists(ENV_FILE_PATH):
+        return False
+
+    try:
+        with open(ENV_FILE_PATH, 'r') as env_file:
+            lines = env_file.readlines()
+    except OSError:
+        return False
+
+    seen = set()
+    out_lines = []
+    for raw_line in lines:
+        stripped = raw_line.strip()
+        if stripped and not stripped.startswith('#') and '=' in stripped:
+            key = stripped.split('=', 1)[0].strip()
+            if key in updated_values:
+                out_lines.append(f"{key}={updated_values[key]}\n")
+                seen.add(key)
+                continue
+        out_lines.append(raw_line)
+
+    # Append missing keys at the end
+    for key, value in updated_values.items():
+        if key not in seen:
+            out_lines.append(f"{key}={value}\n")
+
+    try:
+        with open(ENV_FILE_PATH, 'w') as env_file:
+            env_file.writelines(out_lines)
+        return True
+    except OSError:
+        return False
+
+
+def _extract_conflict_ports(error_text):
+    """Extract host ports from Docker bind errors."""
+    if not error_text:
+        return []
+    ports = re.findall(r'Bind for [^:]+:(\d+) failed', error_text)
+    return sorted({int(p) for p in ports})
+
+
+def _build_port_key_map(env_values):
+    mapping = {}
+    for key in PORT_ENV_KEYS:
+        value = env_values.get(key)
+        if value is None:
+            continue
+        try:
+            mapping[int(value)] = key
+        except ValueError:
+            continue
+    return mapping
+
+
+def _next_port_candidate(current_port, used_ports):
+    """Choose a safer high port candidate to avoid recurring conflicts."""
+    if current_port < 1024:
+        candidate = 10000 + current_port
+    elif current_port < 10000:
+        candidate = current_port + 1000
+    else:
+        candidate = current_port + 1
+
+    while candidate in used_ports or candidate > 65535:
+        candidate += 1
+    return candidate
+
+
+def _remap_conflicting_ports(conflict_ports):
+    """Update .env host ports for conflicted bindings and return the changes."""
+    env_values = _read_env_values()
+    if not env_values:
+        return {}
+
+    port_to_key = _build_port_key_map(env_values)
+    used = set(port_to_key.keys())
+    updates = {}
+    remapped = {}
+
+    for port in conflict_ports:
+        key = port_to_key.get(port)
+        if not key:
+            continue
+        new_port = _next_port_candidate(port, used)
+        used.add(new_port)
+        updates[key] = str(new_port)
+        remapped[key] = {'old': port, 'new': new_port}
+
+    if not updates:
+        return {}
+
+    ok = _write_env_updates(updates)
+    return remapped if ok else {}
+
+
+def _format_compose_failure(result, remap_log=None):
+    stderr = (result.stderr or '').strip()
+    stdout = (result.stdout or '').strip()
+    raw = stderr or stdout or 'Unknown compose failure'
+    conflict_ports = _extract_conflict_ports(raw)
+
+    details = []
+    if conflict_ports:
+        details.append(
+            "Port binding failed for: " + ", ".join(str(p) for p in conflict_ports)
+        )
+        details.append(
+            "Run on host: ss -ltnp | grep -E '" + "|".join(f":{p}" for p in conflict_ports) + "'"
+        )
+    if remap_log:
+        moved = ", ".join(
+            f"{k}:{v['old']}→{v['new']}" for k, v in remap_log.items()
+        )
+        details.append(f"Auto-remapped .env ports: {moved}")
+
+    if details:
+        return f"{'; '.join(details)}. Raw error: {raw}"
+    return raw
+
+
+def _run_compose_action(action, timeout=180):
+    """Run docker compose and optionally auto-remap ports when bind conflicts occur."""
+    result = subprocess.run(
+        COMPOSE_CMD + action,
+        cwd=PROJECT_PATH,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+    if result.returncode == 0:
+        return {
+            'ok': True,
+            'result': result,
+            'message': 'Compose action completed',
+            'remapped': {},
+        }
+
+    env_values = _read_env_values()
+    auto_remap = _is_truthy(env_values.get('AUTO_REMAP_PORTS_ON_CONFLICT', '1'))
+    if not auto_remap:
+        return {
+            'ok': False,
+            'result': result,
+            'message': _format_compose_failure(result),
+            'remapped': {},
+        }
+
+    remapped_total = {}
+    last_result = result
+    for _ in range(5):
+        conflict_ports = _extract_conflict_ports((last_result.stderr or '') + "\n" + (last_result.stdout or ''))
+        if not conflict_ports:
+            break
+
+        remapped = _remap_conflicting_ports(conflict_ports)
+        if not remapped:
+            break
+        remapped_total.update(remapped)
+
+        last_result = subprocess.run(
+            COMPOSE_CMD + action,
+            cwd=PROJECT_PATH,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        if last_result.returncode == 0:
+            return {
+                'ok': True,
+                'result': last_result,
+                'message': 'Compose action completed after auto-remapping conflicted ports',
+                'remapped': remapped_total,
+            }
+
+    return {
+        'ok': False,
+        'result': last_result,
+        'message': _format_compose_failure(last_result, remapped_total),
+        'remapped': remapped_total,
+    }
 
 def _get_docker_container(service_name):
     """Logically discover the container using Docker Compose labels instead of brittle fixed names."""
@@ -666,16 +944,13 @@ def deploy_service(service):
         except docker.errors.NotFound:
             pass # Use 'up -d' if not found
 
-        result = subprocess.run(
-            COMPOSE_CMD + action,
-            cwd=PROJECT_PATH,
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
-        if result.returncode == 0:
-            return jsonify({'success': True, 'message': f'{service} {action[0]}ed successfully'})
-        return jsonify({'success': False, 'error': result.stderr or result.stdout}), 500
+        compose = _run_compose_action(action, timeout=120)
+        if compose['ok']:
+            extra = ''
+            if compose['remapped']:
+                extra = ' (ports auto-remapped in .env due conflicts)'
+            return jsonify({'success': True, 'message': f'{service} {action[0]}ed successfully{extra}', 'remapped': compose['remapped']})
+        return jsonify({'success': False, 'error': compose['message'], 'remapped': compose['remapped']}), 500
     except subprocess.TimeoutExpired:
         return jsonify({'success': False, 'error': 'Deployment timed out'}), 504
     except Exception as e:
@@ -685,18 +960,15 @@ def deploy_service(service):
 @app.route('/api/deploy/all', methods=['POST'])
 @admin_required
 def deploy_all():
-    """Start any stopped services without recreating already-running ones."""
+    """Start the stack with orphan cleanup and conflict-aware recovery."""
     try:
-        result = subprocess.run(
-            COMPOSE_CMD + ['up', '-d'],
-            cwd=PROJECT_PATH,
-            capture_output=True,
-            text=True,
-            timeout=300,
-        )
-        if result.returncode == 0:
-            return jsonify({'success': True, 'message': 'All services started'})
-        return jsonify({'success': False, 'error': result.stderr or result.stdout}), 500
+        compose = _run_compose_action(['up', '-d', '--remove-orphans'], timeout=300)
+        if compose['ok']:
+            extra = ''
+            if compose['remapped']:
+                extra = ' (ports auto-remapped in .env due conflicts)'
+            return jsonify({'success': True, 'message': f'All services started{extra}', 'remapped': compose['remapped']})
+        return jsonify({'success': False, 'error': compose['message'], 'remapped': compose['remapped']}), 500
     except subprocess.TimeoutExpired:
         return jsonify({'success': False, 'error': 'Timed out after 5 minutes'}), 504
     except Exception as e:
@@ -761,7 +1033,20 @@ def get_stats():
             })
         return jsonify({'status': 'unavailable', 'total_docs': 0, 'indices': 0})
     except Exception as e:
-        return jsonify({'status': 'error', 'error': str(e), 'total_docs': 0, 'indices': 0})
+        try:
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute('SELECT COUNT(*) AS total_docs FROM attacks')
+            row = cursor.fetchone()
+            conn.close()
+            return jsonify({
+                'status': 'sqlite-only',
+                'error': str(e),
+                'total_docs': row['total_docs'] if row else 0,
+                'indices': 0,
+            })
+        except Exception as db_e:
+            return jsonify({'status': 'error', 'error': f'ES: {e}; DB: {db_e}', 'total_docs': 0, 'indices': 0})
 
 
 # ─────────────────────────────────────────
@@ -865,14 +1150,14 @@ def get_recent_attacks():
         
         # Fallback to SQLite database
         print("⚠️ Elasticsearch unavailable, falling back to SQLite database")
-        attacks = get_attacks_from_db(limit=50)
+        attacks = get_attacks_from_db(limit=limit)
         return jsonify({'attacks': attacks, 'count': len(attacks), 'source': 'sqlite'})
         
     except Exception as e:
         # Final fallback to SQLite
         print(f"❌ Error querying Elasticsearch: {e}, using SQLite fallback")
         try:
-            attacks = get_attacks_from_db(limit=50)
+            attacks = get_attacks_from_db(limit=limit)
             return jsonify({'attacks': attacks, 'count': len(attacks), 'source': 'sqlite', 'error': str(e)})
         except Exception as db_e:
             return jsonify({'attacks': [], 'count': 0, 'error': f'ES: {str(e)}, DB: {str(db_e)}'})
@@ -955,9 +1240,21 @@ def get_top_credentials():
                 'top_usernames': aggs.get('top_usernames', {}).get('buckets', []),
                 'top_passwords': aggs.get('top_passwords', {}).get('buckets', []),
             })
-        return jsonify({'top_usernames': [], 'top_passwords': []})
+        return jsonify({
+            'top_usernames': _terms_agg_from_db('username', 10, "username IS NOT NULL AND username != ''"),
+            'top_passwords': _terms_agg_from_db('password', 10, "password IS NOT NULL AND password != ''"),
+            'source': 'sqlite',
+        })
     except Exception as e:
-        return jsonify({'top_usernames': [], 'top_passwords': [], 'error': str(e)})
+        try:
+            return jsonify({
+                'top_usernames': _terms_agg_from_db('username', 10, "username IS NOT NULL AND username != ''"),
+                'top_passwords': _terms_agg_from_db('password', 10, "password IS NOT NULL AND password != ''"),
+                'source': 'sqlite',
+                'error': str(e),
+            })
+        except Exception as db_e:
+            return jsonify({'top_usernames': [], 'top_passwords': [], 'error': f'ES: {e}; DB: {db_e}'})
 
 
 @app.route('/api/attacks/top-commands')
@@ -976,9 +1273,19 @@ def get_top_commands():
         if resp.status_code == 200:
             aggs = resp.json().get('aggregations', {})
             return jsonify({'top_commands': aggs.get('top_commands', {}).get('buckets', [])})
-        return jsonify({'top_commands': []})
+        return jsonify({
+            'top_commands': _terms_agg_from_db('input', 15, "input IS NOT NULL AND input != ''"),
+            'source': 'sqlite',
+        })
     except Exception as e:
-        return jsonify({'top_commands': [], 'error': str(e)})
+        try:
+            return jsonify({
+                'top_commands': _terms_agg_from_db('input', 15, "input IS NOT NULL AND input != ''"),
+                'source': 'sqlite',
+                'error': str(e),
+            })
+        except Exception as db_e:
+            return jsonify({'top_commands': [], 'error': f'ES: {e}; DB: {db_e}'})
 
 
 @app.route('/api/attacks/by-country')
@@ -996,9 +1303,19 @@ def get_attacks_by_country():
         if resp.status_code == 200:
             aggs = resp.json().get('aggregations', {})
             return jsonify({'by_country': aggs.get('by_country', {}).get('buckets', [])})
-        return jsonify({'by_country': []})
+        return jsonify({
+            'by_country': _terms_agg_from_db('country_name', 20, "country_name IS NOT NULL AND country_name != ''"),
+            'source': 'sqlite',
+        })
     except Exception as e:
-        return jsonify({'by_country': [], 'error': str(e)})
+        try:
+            return jsonify({
+                'by_country': _terms_agg_from_db('country_name', 20, "country_name IS NOT NULL AND country_name != ''"),
+                'source': 'sqlite',
+                'error': str(e),
+            })
+        except Exception as db_e:
+            return jsonify({'by_country': [], 'error': f'ES: {e}; DB: {db_e}'})
 
 
 @app.route('/api/attacks/timeline')
@@ -1026,9 +1343,12 @@ def get_attack_timeline():
         if resp.status_code == 200:
             aggs = resp.json().get('aggregations', {})
             return jsonify({'timeline': aggs.get('attacks_over_time', {}).get('buckets', [])})
-        return jsonify({'timeline': []})
+        return jsonify({'timeline': _timeline_from_db(24), 'source': 'sqlite'})
     except Exception as e:
-        return jsonify({'timeline': [], 'error': str(e)})
+        try:
+            return jsonify({'timeline': _timeline_from_db(24), 'source': 'sqlite', 'error': str(e)})
+        except Exception as db_e:
+            return jsonify({'timeline': [], 'error': f'ES: {e}; DB: {db_e}'})
 
 
 @app.route('/api/attacks/geo-points')

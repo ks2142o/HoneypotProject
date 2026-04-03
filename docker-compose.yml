@@ -305,7 +305,7 @@ services:
 
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - .:/app/project:ro
+      - .:/app/project
       - ./data/webapp:/app/data
 
     # Dashboard is publicly accessible (restrict with firewall on cloud)

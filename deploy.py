@@ -208,9 +208,9 @@ ELASTICSEARCH_PORT=9201
 KIBANA_PORT=5601
 LOGSTASH_BEATS_PORT=5044
 LOGSTASH_API_PORT=9600
-WEBAPP_PORT=5000
+WEBAPP_PORT=5500
 COWRIE_SSH_PORT=2222
-COWRIE_TELNET_PORT=2223
+COWRIE_TELNET_PORT=2323
 DIONAEA_FTP_PORT=2121
 DIONAEA_DAYTIME_PORT=4042
 DIONAEA_RPC_PORT=4135
@@ -218,9 +218,13 @@ DIONAEA_HTTPS_PORT=4443
 DIONAEA_SMB_PORT=4445
 DIONAEA_MSSQL_PORT=4433
 DIONAEA_MYSQL_PORT=4306
-DIONAEA_SIP_PORT=5060
-DIONAEA_SIPS_PORT=5061
-FLASK_HTTP_PORT=8181
+DIONAEA_SIP_PORT=15060
+DIONAEA_SIPS_PORT=15061
+FLASK_HTTP_PORT=18080
+
+# Automatically remap conflicted host ports during dashboard deployment actions.
+# Set to 0 if you prefer strict failure over auto-remediation.
+AUTO_REMAP_PORTS_ON_CONFLICT=1
 
 # ── ngrok (WSL2 internet exposure — not needed on cloud VPS) ─────────────────
 NGROK_AUTHTOKEN=
@@ -267,6 +271,25 @@ LOG_RETENTION_DAYS=30
             logger.info(f"✓ Created {directory}")
         
         return True
+
+    def resolve_port_conflicts(self) -> bool:
+        """Auto-remap conflicted host ports in .env before compose startup."""
+        script_path = self.project_root / 'scripts' / 'resolve_port_conflicts.py'
+        if not script_path.exists():
+            logger.warning("Port resolver script not found: %s", script_path)
+            return True
+
+        logger.info("Checking host port conflicts in .env...")
+        try:
+            subprocess.run(
+                ['python3', str(script_path), '--env-file', str(self.env_file)],
+                cwd=str(self.project_root),
+                check=True,
+            )
+            return True
+        except subprocess.CalledProcessError as e:
+            logger.error("Port conflict resolver failed: %s", e)
+            return False
     
     def deploy_honeypots(self, honeypots: List[str] = None) -> bool:
         """Deploy specified honeypots using Docker Compose"""
@@ -362,7 +385,7 @@ LOG_RETENTION_DAYS=30
                 cwd=str(self.project_root),
                 check=True
             )
-            logger.info("✓ Web interface deployed at http://localhost:5000")
+            logger.info("✓ Web interface deployed at http://localhost:%s", self._read_env_value('WEBAPP_PORT', '5500'))
             return True
         except subprocess.CalledProcessError as e:
             logger.error(f"Failed to deploy webapp: {e}")
@@ -407,8 +430,9 @@ LOG_RETENTION_DAYS=30
 
         while time.time() - start_time < timeout:
             try:
+                kibana_port = self._read_env_value('KIBANA_PORT', '5601')
                 response = requests.get(
-                    'http://localhost:5601/api/status',
+                    f'http://localhost:{kibana_port}/api/status',
                     timeout=10
                 )
 
@@ -573,6 +597,10 @@ def main():
     if not deployer.create_directory_structure():
         logger.error("Directory structure creation failed")
         sys.exit(1)
+
+    if not deployer.resolve_port_conflicts():
+        logger.error("Port conflict resolution failed")
+        sys.exit(1)
     
     # Deployment
     success = True
@@ -598,14 +626,14 @@ def main():
         deployer.check_deployment_status()
         
         logger.info("\nAccess Points:")
-        logger.info("  - Web Management Interface: http://localhost:5000")
-        logger.info("  - Kibana Dashboard: http://localhost:5601")
+        logger.info(f"  - Web Management Interface: http://localhost:{deployer._read_env_value('WEBAPP_PORT', '5500')}")
+        logger.info(f"  - Kibana Dashboard: http://localhost:{deployer._read_env_value('KIBANA_PORT', '5601')}")
         logger.info(f"  - Elasticsearch API: http://localhost:{deployer._read_env_value('ELASTICSEARCH_PORT', '9201')}")
-        logger.info("  - SSH Honeypot: port 2222")
-        logger.info("  - Telnet Honeypot: port 2223")
-        _flask_port = deployer._read_env_value('FLASK_HTTP_PORT', '80')
+        logger.info(f"  - SSH Honeypot: port {deployer._read_env_value('COWRIE_SSH_PORT', '2222')}")
+        logger.info(f"  - Telnet Honeypot: port {deployer._read_env_value('COWRIE_TELNET_PORT', '2323')}")
+        _flask_port = deployer._read_env_value('FLASK_HTTP_PORT', '18080')
         logger.info(f"  - Web Honeypot: port {_flask_port}")
-        logger.info("\n⚠ NOTE: No authentication required (security disabled for testing)")
+        logger.info("\nAuth is enabled: login with admin credentials from .env")
         logger.info("="*60)
     else:
         logger.error("Deployment failed. Check logs for details.")
