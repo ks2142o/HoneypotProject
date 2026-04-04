@@ -22,6 +22,15 @@ KIBANA_PORT        := $(shell grep -E '^KIBANA_PORT='     $(ENV_FILE) 2>/dev/nul
 ELASTICSEARCH_PORT := $(shell grep -E '^ELASTICSEARCH_PORT=' $(ENV_FILE) 2>/dev/null | cut -d= -f2 | tr -d ' \t' || echo 9201)
 COWRIE_SSH_PORT    := $(shell grep -E '^COWRIE_SSH_PORT=' $(ENV_FILE) 2>/dev/null | cut -d= -f2 | tr -d ' \t' || echo 2222)
 COWRIE_TELNET_PORT := $(shell grep -E '^COWRIE_TELNET_PORT=' $(ENV_FILE) 2>/dev/null | cut -d= -f2 | tr -d ' \t' || echo 2323)
+DIONAEA_FTP_PORT   := $(shell grep -E '^DIONAEA_FTP_PORT=' $(ENV_FILE) 2>/dev/null | cut -d= -f2 | tr -d ' \t' || echo 2121)
+DIONAEA_DAYTIME_PORT := $(shell grep -E '^DIONAEA_DAYTIME_PORT=' $(ENV_FILE) 2>/dev/null | cut -d= -f2 | tr -d ' \t' || echo 4042)
+DIONAEA_RPC_PORT   := $(shell grep -E '^DIONAEA_RPC_PORT=' $(ENV_FILE) 2>/dev/null | cut -d= -f2 | tr -d ' \t' || echo 4135)
+DIONAEA_HTTPS_PORT := $(shell grep -E '^DIONAEA_HTTPS_PORT=' $(ENV_FILE) 2>/dev/null | cut -d= -f2 | tr -d ' \t' || echo 4443)
+DIONAEA_SMB_PORT   := $(shell grep -E '^DIONAEA_SMB_PORT=' $(ENV_FILE) 2>/dev/null | cut -d= -f2 | tr -d ' \t' || echo 4445)
+DIONAEA_MSSQL_PORT := $(shell grep -E '^DIONAEA_MSSQL_PORT=' $(ENV_FILE) 2>/dev/null | cut -d= -f2 | tr -d ' \t' || echo 4433)
+DIONAEA_MYSQL_PORT := $(shell grep -E '^DIONAEA_MYSQL_PORT=' $(ENV_FILE) 2>/dev/null | cut -d= -f2 | tr -d ' \t' || echo 4306)
+DIONAEA_SIP_PORT   := $(shell grep -E '^DIONAEA_SIP_PORT=' $(ENV_FILE) 2>/dev/null | cut -d= -f2 | tr -d ' \t' || echo 15060)
+DIONAEA_SIPS_PORT  := $(shell grep -E '^DIONAEA_SIPS_PORT=' $(ENV_FILE) 2>/dev/null | cut -d= -f2 | tr -d ' \t' || echo 15061)
 
 # Detect docker compose command (v2 plugin vs legacy standalone).
 # Strategy:
@@ -164,8 +173,10 @@ cloud-setup: ## Prepare a cloud VM (Oracle/AWS/GCP) for deployment — run once 
 	@printf "       8 GB  →  ES=-Xms1g -Xmx1g    LS=-Xms512m -Xmx512m\n"
 	@printf "       16 GB →  ES=-Xms2g -Xmx2g    LS=-Xms1g   -Xmx1g\n"
 	@printf "       24 GB →  ES=-Xms4g -Xmx4g    LS=-Xms2g   -Xmx2g\n"
-	@printf "  3. Open firewall ports: $(COWRIE_SSH_PORT) $(COWRIE_TELNET_PORT) $(FLASK_HTTP_PORT) $(WEBAPP_PORT)\n"
-	@printf "  4. Run: make deploy\n\n"
+	@printf "  3. Open firewall ports for public honeypots + dashboard:\n"
+	@printf "       $(WEBAPP_PORT) $(COWRIE_SSH_PORT) $(COWRIE_TELNET_PORT) $(FLASK_HTTP_PORT) $(DIONAEA_FTP_PORT) $(DIONAEA_DAYTIME_PORT) $(DIONAEA_RPC_PORT) $(DIONAEA_HTTPS_PORT) $(DIONAEA_SMB_PORT) $(DIONAEA_MSSQL_PORT) $(DIONAEA_MYSQL_PORT) $(DIONAEA_SIP_PORT) $(DIONAEA_SIPS_PORT)\n"
+	@printf "  4. Run: make deploy\n"
+	@printf "  5. Verify public dashboard access: make public-dashboard\n\n"
 
 .PHONY: env
 env: ## Create .env file from template if it does not exist
@@ -328,6 +339,53 @@ restart-%: ## Restart a specific service: make restart-kibana
 status: ## Show status of all containers
 	$(call log, Checking service status…)
 	@$(DOCKER_COMPOSE) -f $(COMPOSE_FILE) ps
+
+.PHONY: public-dashboard
+public-dashboard: env ## Diagnose/fix public access to dashboard on WEBAPP_PORT
+	$(call log, Validating dashboard public exposure on port $(WEBAPP_PORT)…)
+	@if [ "$(DOCKER_COMPOSE)" = "MISSING" ]; then \
+	  $(call err, docker compose not available — cannot validate exposure); \
+	  exit 1; \
+	fi
+	@$(DOCKER_COMPOSE) -f $(COMPOSE_FILE) up -d webapp >/dev/null 2>&1 || true
+	@printf "$(BLUE)  Listener check  $(RESET)"; \
+	if ss -ltn | grep -q ":$(WEBAPP_PORT) "; then \
+	  printf "$(GREEN)✓ listening$(RESET)\n"; \
+	else \
+	  printf "$(RED)✗ not listening$(RESET)\n"; \
+	  echo "    Run: $(DOCKER_COMPOSE) -f $(COMPOSE_FILE) up -d webapp"; \
+	  echo "    Then inspect: $(DOCKER_COMPOSE) -f $(COMPOSE_FILE) logs --tail=120 webapp"; \
+	  exit 1; \
+	fi
+	@printf "$(BLUE)  Local health    $(RESET)"; \
+	if curl -sf "http://127.0.0.1:$(WEBAPP_PORT)/api/health" > /dev/null 2>&1; then \
+	  printf "$(GREEN)✓ healthy$(RESET)\n"; \
+	else \
+	  printf "$(RED)✗ unreachable$(RESET)\n"; \
+	  echo "    Webapp is not responding locally on $(WEBAPP_PORT)."; \
+	  echo "    Check logs: $(DOCKER_COMPOSE) -f $(COMPOSE_FILE) logs --tail=120 webapp"; \
+	  exit 1; \
+	fi
+	@printf "$(BLUE)  Host firewall   $(RESET)"; \
+	if command -v ufw >/dev/null 2>&1; then \
+	  sudo ufw allow $(WEBAPP_PORT)/tcp >/dev/null 2>&1 || true; \
+	  printf "$(GREEN)✓ ufw rule ensured$(RESET)\n"; \
+	elif command -v firewall-cmd >/dev/null 2>&1; then \
+	  sudo firewall-cmd --add-port=$(WEBAPP_PORT)/tcp --permanent >/dev/null 2>&1 || true; \
+	  sudo firewall-cmd --reload >/dev/null 2>&1 || true; \
+	  printf "$(GREEN)✓ firewalld rule ensured$(RESET)\n"; \
+	else \
+	  printf "$(YELLOW)⚠ no ufw/firewalld detected$(RESET)\n"; \
+	fi
+	@pub_ip=$$(curl -s https://ifconfig.me 2>/dev/null || echo "<public-ip>"); \
+	echo ""; \
+	echo "External URL test:"; \
+	echo "  http://$$pub_ip:$(WEBAPP_PORT)"; \
+	echo ""; \
+	echo "If still unreachable from outside:"; \
+	echo "  1) OCI Security List/NSG ingress must allow TCP $(WEBAPP_PORT) from 0.0.0.0/0"; \
+	echo "  2) Ensure route table + internet gateway are attached to this subnet"; \
+	echo "  3) Verify no upstream ACL blocks the port";
 
 .PHONY: ps
 ps: status ## Alias for status
@@ -501,7 +559,7 @@ test-auth: ## Test basic authentication (login + /api/auth/me)
 .PHONY: test-ports
 test-ports: ## Verify all expected TCP ports are listening
 	$(call log, Port availability tests…)
-	@for port in $(WEBAPP_PORT) $(KIBANA_PORT) $(ELASTICSEARCH_PORT) 9600 $(FLASK_HTTP_PORT) $(COWRIE_SSH_PORT) $(COWRIE_TELNET_PORT); do \
+	@for port in $(WEBAPP_PORT) $(KIBANA_PORT) $(ELASTICSEARCH_PORT) 9600 $(FLASK_HTTP_PORT) $(COWRIE_SSH_PORT) $(COWRIE_TELNET_PORT) $(DIONAEA_FTP_PORT) $(DIONAEA_DAYTIME_PORT) $(DIONAEA_RPC_PORT) $(DIONAEA_HTTPS_PORT) $(DIONAEA_SMB_PORT) $(DIONAEA_MSSQL_PORT) $(DIONAEA_MYSQL_PORT) $(DIONAEA_SIP_PORT) $(DIONAEA_SIPS_PORT); do \
 	   printf "  Port %-6s  " "$$port"; \
 	   if timeout 2 bash -c "echo >/dev/tcp/localhost/$$port" 2>/dev/null; then \
 	     printf "$(GREEN)OPEN$(RESET)\n"; \

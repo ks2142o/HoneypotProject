@@ -74,9 +74,9 @@ export default function WorldMap({ points, onRefresh }) {
                 <Popup>
                   <div className="text-xs leading-relaxed">
                     <p className="font-bold text-sm mb-1">{p.ip || 'Unknown IP'}</p>
-                    <p>🌍 {p.country}</p>
-                    <p>🎯 {p.type}</p>
-                    <p>🔥 <strong className="text-cyber-accent">{eventsCount}</strong> attempts tracked</p>
+                    <p>Country: {p.country}</p>
+                    <p>Honeypot: {p.type}</p>
+                    <p>Attempts: <strong className="text-cyber-accent">{eventsCount}</strong></p>
                   </div>
                 </Popup>
               </CircleMarker>
@@ -91,6 +91,9 @@ export default function WorldMap({ points, onRefresh }) {
         {points.length > 0
           ? `${points.length} attack origin${points.length !== 1 ? 's' : ''} plotted`
           : 'No geo data yet — deploy honeypots and wait for traffic'}
+      </p>
+      <p className="text-[10px] text-cyber-muted/80 mt-1">
+        Private and loopback source IPs are not geolocatable and will not appear on the world map.
       </p>
     </div>
   )

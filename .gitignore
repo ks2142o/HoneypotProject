@@ -140,3 +140,6 @@ desktop.ini
 .cache/
 tmp/
 temp/
+
+# Assistant local memory (do not commit)
+memory.md

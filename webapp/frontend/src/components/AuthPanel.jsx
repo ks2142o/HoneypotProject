@@ -1,5 +1,15 @@
 import React, { useState } from 'react';
 import * as api from '../api';
+import {
+  ShieldCheck,
+  User,
+  Mail,
+  Lock,
+  LogIn,
+  UserPlus,
+  ArrowRightLeft,
+  AlertTriangle,
+} from 'lucide-react';
 
 function AuthPanel({ onAuthenticated }) {
   const [mode, setMode] = useState('login');
@@ -55,18 +65,50 @@ function AuthPanel({ onAuthenticated }) {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 to-gray-800 flex items-center justify-center p-4">
-      <div className="bg-gray-800 rounded-lg shadow-2xl p-8 w-full max-w-md">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-white mb-2">Honeypot Dashboard</h1>
-          <p className="text-gray-400">Threat Intelligence Platform</p>
+    <div className="min-h-screen relative overflow-hidden bg-cyber-bg flex items-center justify-center p-4">
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute -top-24 -left-20 w-72 h-72 rounded-full bg-cyber-accent/10 blur-3xl" />
+        <div className="absolute -bottom-28 -right-20 w-80 h-80 rounded-full bg-cyber-green/10 blur-3xl" />
+      </div>
+
+      <div className="relative w-full max-w-md rounded-2xl border border-cyber-border bg-cyber-card/95 backdrop-blur p-7 shadow-cyber-lg">
+        <div className="text-center mb-7">
+          <div className="mx-auto mb-3 w-14 h-14 rounded-2xl bg-cyber-accent/10 border border-cyber-accent/30 flex items-center justify-center shadow-[0_0_30px_rgba(0,212,255,0.18)]">
+            <ShieldCheck size={26} className="text-cyber-accent" />
+          </div>
+          <h1 className="text-2xl font-bold text-cyber-bright tracking-wide">Sentinel Access</h1>
+          <p className="text-sm text-cyber-muted mt-1">Honeypot Threat Intelligence Console</p>
         </div>
 
-        {/* Mode switcher (single action button) */}
-        <div className="flex items-center justify-between mb-6">
-          <span className="text-sm text-gray-400">
-            {mode === 'login' ? 'Log into your account' : 'Create a new account'}
-          </span>
+        {/* Mode switcher */}
+        <div className="flex items-center justify-between gap-2 mb-6">
+          <div className="inline-flex p-1 rounded-lg border border-cyber-border bg-cyber-card2">
+            <button
+              type="button"
+              onClick={() => {
+                setMode('login');
+                setError('');
+              }}
+              className={`px-3 py-1.5 text-xs rounded-md transition ${mode === 'login' ? 'bg-cyber-accent/15 text-cyber-accent border border-cyber-accent/30' : 'text-cyber-muted hover:text-cyber-bright'}`}
+            >
+              <span className="inline-flex items-center gap-1.5">
+                <LogIn size={13} /> Login
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setMode('register');
+                setError('');
+              }}
+              className={`px-3 py-1.5 text-xs rounded-md transition ${mode === 'register' ? 'bg-cyber-green/15 text-cyber-green border border-cyber-green/30' : 'text-cyber-muted hover:text-cyber-bright'}`}
+            >
+              <span className="inline-flex items-center gap-1.5">
+                <UserPlus size={13} /> Register
+              </span>
+            </button>
+          </div>
+
           <button
             type="button"
             onClick={() => {
@@ -75,71 +117,83 @@ function AuthPanel({ onAuthenticated }) {
               setError('');
               setFormData({ username: '', email: '', password: '' });
             }}
-            className="text-xs text-cyan-300 hover:text-cyan-200 underline transition"
+            className="text-xs text-cyber-muted hover:text-cyber-bright transition inline-flex items-center gap-1"
+            title="Switch mode"
           >
-            {mode === 'login' ? 'Switch to Register' : 'Switch to Login'}
+            <ArrowRightLeft size={12} />
+            Switch
           </button>
         </div>
 
         {/* Error Message */}
         {error && (
-          <div className="bg-red-900 border border-red-600 text-red-100 px-4 py-3 rounded mb-4">
-            {error}
+          <div className="mb-4 rounded-lg border border-cyber-red/40 bg-cyber-red/10 text-cyber-red px-3 py-2 text-sm flex items-start gap-2">
+            <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+            <span>{error}</span>
           </div>
         )}
 
         {/* Form */}
         <form onSubmit={mode === 'login' ? handleLogin : handleRegister}>
           <div className="mb-4">
-            <label className="block text-gray-300 text-sm font-semibold mb-2">
+            <label className="block text-cyber-muted text-xs font-semibold tracking-wider uppercase mb-2">
               {mode === 'login' ? 'Username or Email' : 'Username'}
             </label>
-            <input
-              type="text"
-              name="username"
-              value={formData.username}
-              onChange={handleInputChange}
-              placeholder={mode === 'login' ? 'Enter username or email' : 'At least 3 characters'}
-              className="w-full px-4 py-2 rounded bg-gray-700 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
-              disabled={loading}
-            />
-          </div>
-
-          {mode === 'register' && (
-            <div className="mb-4">
-              <label className="block text-gray-300 text-sm font-semibold mb-2">Email</label>
+            <div className="relative">
+              <User size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-cyber-muted" />
               <input
-                type="email"
-                name="email"
-                value={formData.email}
+                type="text"
+                name="username"
+                value={formData.username}
                 onChange={handleInputChange}
-                placeholder="Enter your email"
-                className="w-full px-4 py-2 rounded bg-gray-700 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder={mode === 'login' ? 'admin or admin@local' : 'minimum 3 characters'}
+                className="cyber-input w-full pl-10"
                 required
                 disabled={loading}
               />
             </div>
+          </div>
+
+          {mode === 'register' && (
+            <div className="mb-4">
+              <label className="block text-cyber-muted text-xs font-semibold tracking-wider uppercase mb-2">Email</label>
+              <div className="relative">
+                <Mail size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-cyber-muted" />
+                <input
+                  type="email"
+                  name="email"
+                  value={formData.email}
+                  onChange={handleInputChange}
+                  placeholder="name@company.com"
+                  className="cyber-input w-full pl-10"
+                  required
+                  disabled={loading}
+                />
+              </div>
+            </div>
           )}
 
           <div className="mb-6">
-            <label className="block text-gray-300 text-sm font-semibold mb-2">Password</label>
-            <input
-              type="password"
-              name="password"
-              value={formData.password}
-              onChange={handleInputChange}
-              placeholder={mode === 'login' ? 'Enter password' : 'At least 8 characters'}
-              className="w-full px-4 py-2 rounded bg-gray-700 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
-              disabled={loading}
-            />
+            <label className="block text-cyber-muted text-xs font-semibold tracking-wider uppercase mb-2">Password</label>
+            <div className="relative">
+              <Lock size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-cyber-muted" />
+              <input
+                type="password"
+                name="password"
+                value={formData.password}
+                onChange={handleInputChange}
+                placeholder={mode === 'login' ? 'Enter password' : 'minimum 8 characters'}
+                className="cyber-input w-full pl-10"
+                required
+                disabled={loading}
+              />
+            </div>
           </div>
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white font-bold py-2 px-4 rounded transition"
+            className={`w-full btn justify-center ${mode === 'login' ? 'btn-primary' : 'btn-success'}`}
           >
             {loading ? (
               <span className="flex items-center justify-center">
@@ -150,17 +204,17 @@ function AuthPanel({ onAuthenticated }) {
                 {mode === 'login' ? 'Logging in...' : 'Registering...'}
               </span>
             ) : mode === 'login' ? (
-              'Login'
+              <span className="inline-flex items-center gap-1.5"><LogIn size={14} /> Login</span>
             ) : (
-              'Register'
+              <span className="inline-flex items-center gap-1.5"><UserPlus size={14} /> Register</span>
             )}
           </button>
         </form>
 
-        <p className="text-gray-400 text-sm text-center mt-4">
+        <p className="text-cyber-muted text-xs text-center mt-4">
           {mode === 'login'
-            ? 'Don\'t have an account? Click "Register" above'
-            : 'Already have an account? Click "Login" above'}
+            ? 'No account yet? Use Register mode to create one.'
+            : 'Already registered? Switch to Login mode.'}
         </p>
       </div>
     </div>

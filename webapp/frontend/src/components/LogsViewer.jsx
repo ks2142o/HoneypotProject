@@ -3,13 +3,13 @@ import { ScrollText, Play, Trash2, Download } from 'lucide-react'
 import { api } from '../api'
 
 const SERVICES = [
-  { value: 'elasticsearch', label: '🔍 Elasticsearch' },
-  { value: 'logstash',      label: '🔄 Logstash' },
-  { value: 'kibana',        label: '📊 Kibana' },
-  { value: 'cowrie',        label: '🐝 Cowrie SSH' },
-  { value: 'dionaea',       label: '🪤 Dionaea' },
-  { value: 'flask',         label: '🌐 Flask HTTP' },
-  { value: 'webapp',        label: '🖥️ Dashboard' },
+  { value: 'elasticsearch', label: 'Elasticsearch' },
+  { value: 'logstash',      label: 'Logstash' },
+  { value: 'kibana',        label: 'Kibana' },
+  { value: 'cowrie',        label: 'Cowrie SSH' },
+  { value: 'dionaea',       label: 'Dionaea' },
+  { value: 'flask',         label: 'Flask HTTP' },
+  { value: 'webapp',        label: 'Dashboard' },
 ]
 
 export default function LogsViewer({ notify }) {
