@@ -7,14 +7,14 @@ const HONEYPOT_COLOR = {
   'dionaea':    'text-cyber-red',
 }
 
-function escapeHtml(s) {
-  return String(s ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
+function getSortValue(attack, sortCol) {
+  if (sortCol === 'geoip') {
+    return String((attack.geoip ?? {}).country_name ?? '')
+  }
+  return String(attack[sortCol] ?? '')
 }
 
-export default function AttacksTable({ attacks, onRefresh }) {
+export default function AttacksTable({ attacks, onRefresh, isAdmin }) {
   const [filter, setFilter]   = useState('')
   const [sortCol, setSortCol] = useState('@timestamp')
   const [sortAsc, setSortAsc] = useState(false)
@@ -33,8 +33,8 @@ export default function AttacksTable({ attacks, onRefresh }) {
 
   const sorted = useMemo(() => {
     return [...filtered].sort((a, b) => {
-      const va = String(a[sortCol] ?? '')
-      const vb = String(b[sortCol] ?? '')
+      const va = getSortValue(a, sortCol)
+      const vb = getSortValue(b, sortCol)
       return sortAsc ? va.localeCompare(vb) : vb.localeCompare(va)
     })
   }, [filtered, sortCol, sortAsc])
@@ -117,7 +117,9 @@ export default function AttacksTable({ attacks, onRefresh }) {
                 const cc  = (a.geoip ?? {}).country_name ?? '—'
                 const hp  = a.honeypot_type ?? '—'
                 const ev  = a.event_type ?? '—'
-                const det = [a.username, a.password, a.input].filter(Boolean).join(' / ') || '—'
+                const det = isAdmin
+                  ? ([a.username, a.password, a.input].filter(Boolean).join(' / ') || '—')
+                  : (a.input ? String(a.input) : 'Restricted for non-admin')
                 return (
                   <tr key={i}>
                     <td className="text-cyber-muted font-mono whitespace-nowrap text-[11px]">{ts}</td>
@@ -125,10 +127,7 @@ export default function AttacksTable({ attacks, onRefresh }) {
                     <td className="text-cyber-yellow text-[11px]">{cc}</td>
                     <td className={`font-medium text-[11px] ${HONEYPOT_COLOR[hp] ?? 'text-cyber-green'}`}>{hp}</td>
                     <td className="text-cyber-muted text-[11px]">{ev}</td>
-                    <td
-                      className="font-mono text-cyber-purple text-[11px]"
-                      dangerouslySetInnerHTML={{ __html: escapeHtml(det) }}
-                    />
+                    <td className="font-mono text-cyber-purple text-[11px]">{det}</td>
                   </tr>
                 )
               })}

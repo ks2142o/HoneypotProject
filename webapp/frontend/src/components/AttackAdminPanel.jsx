@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import * as api from '../api';
+import { api } from '../api';
 import { RefreshCw, Search, Trash2, Download, Filter, Target } from 'lucide-react';
 
 const HONEYPOT_COLOR = {
@@ -23,7 +23,7 @@ function AttackAdminPanel() {
 
   useEffect(() => {
     loadAttacks();
-  }, [page, honeypotFilter, eventFilter]);
+  }, [page, honeypotFilter, eventFilter, filter]);
 
   useEffect(() => {
     if (!autoRefresh) return undefined;
@@ -31,7 +31,7 @@ function AttackAdminPanel() {
       loadAttacks();
     }, 10000);
     return () => clearInterval(interval);
-  }, [autoRefresh, page, honeypotFilter, eventFilter]);
+  }, [autoRefresh, page, honeypotFilter, eventFilter, filter]);
 
   const loadAttacks = async () => {
     setLoading(true);

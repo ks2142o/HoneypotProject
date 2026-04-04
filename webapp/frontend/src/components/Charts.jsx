@@ -95,7 +95,7 @@ function ChartCard({ icon: Icon, title, children }) {
 }
 
 /* ── Main export ───────────────────────────────────────────── */
-export default function Charts({ timeline, countries, usernames, passwords, commands }) {
+export default function Charts({ timeline, countries, usernames, passwords, commands, isAdmin }) {
   return (
     <div className="space-y-4">
       {/* Row 1: Timeline + Countries */}
@@ -113,32 +113,34 @@ export default function Charts({ timeline, countries, usernames, passwords, comm
         </ChartCard>
       </div>
 
-      {/* Row 2: Usernames / Passwords / Commands */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <ChartCard icon={User} title="Top Usernames Tried">
-          <HBarChart
-            data={usernames}
-            color="#00d4ff"
-            emptyMsg="No credential data yet"
-          />
-        </ChartCard>
+      {/* Row 2: Sensitive intel (admin only) */}
+      {isAdmin && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <ChartCard icon={User} title="Top Usernames Tried">
+            <HBarChart
+              data={usernames}
+              color="#00d4ff"
+              emptyMsg="No credential data yet"
+            />
+          </ChartCard>
 
-        <ChartCard icon={Key} title="Top Passwords Tried">
-          <HBarChart
-            data={passwords}
-            color="#ff4757"
-            emptyMsg="No credential data yet"
-          />
-        </ChartCard>
+          <ChartCard icon={Key} title="Top Passwords Tried">
+            <HBarChart
+              data={passwords}
+              color="#ff4757"
+              emptyMsg="No credential data yet"
+            />
+          </ChartCard>
 
-        <ChartCard icon={Terminal} title="Top Shell Commands">
-          <HBarChart
-            data={commands}
-            color="#a55eea"
-            emptyMsg="No command data yet"
-          />
-        </ChartCard>
-      </div>
+          <ChartCard icon={Terminal} title="Top Shell Commands">
+            <HBarChart
+              data={commands}
+              color="#a55eea"
+              emptyMsg="No command data yet"
+            />
+          </ChartCard>
+        </div>
+      )}
     </div>
   )
 }

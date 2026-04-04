@@ -1,4 +1,4 @@
-import { Play, RotateCcw, ExternalLink, HeartPulse, Activity } from 'lucide-react'
+import { ExternalLink, HeartPulse, Activity } from 'lucide-react'
 
 const HEALTH_COLOR = (v) => {
   if (['healthy', 'green'].includes(v))              return 'text-cyber-green'
@@ -7,7 +7,7 @@ const HEALTH_COLOR = (v) => {
   return 'text-cyber-red'
 }
 
-export default function ControlPanel({ health, onDeployAll, isAdmin }) {
+export default function ControlPanel({ health, isAdmin }) {
   const host      = window.location.hostname
   const kibanaUrl = `http://${host}:5601`
 
@@ -16,27 +16,6 @@ export default function ControlPanel({ health, onDeployAll, isAdmin }) {
       <p className="section-title">
         <Activity size={14} /> Quick Actions
       </p>
-
-      {/* ── Service control ───────────────────────────────────── */}
-      <div className="space-y-2">
-        <p className="text-[10px] font-semibold tracking-widest uppercase text-cyber-muted">
-          Service Control
-        </p>
-        {!isAdmin ? (
-          <div className="bg-gray-700/20 border border-gray-600/20 rounded p-3">
-            <p className="text-xs text-gray-400">Admin only: Service control disabled</p>
-          </div>
-        ) : (
-          <button
-            className="btn btn-warning w-full justify-center shadow-[0_0_10px_rgba(255,191,0,0.2)]"
-            onClick={() => {
-              if (window.confirm('WARNING: Are you sure you want to REBOOT all managed services? This may momentarily break active ELK pipelines and current Honeypot sessions.')) onDeployAll()
-            }}
-          >
-            <RotateCcw size={14} /> Restart All Services
-          </button>
-        )}
-      </div>
 
       {/* ── External links ────────────────────────────────────── */}
       <div className="space-y-2">
@@ -54,6 +33,11 @@ export default function ControlPanel({ health, onDeployAll, isAdmin }) {
         <p className="text-[10px] text-cyber-muted">
           Advanced analytics &amp; custom visualisations on port 5601
         </p>
+        {!isAdmin && (
+          <p className="text-[10px] text-cyber-muted">
+            Operational controls and raw logs are restricted to administrators.
+          </p>
+        )}
       </div>
 
       {/* ── System health ─────────────────────────────────────── */}

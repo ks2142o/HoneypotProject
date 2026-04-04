@@ -264,7 +264,7 @@ services:
       - ./logs/flask:/app/logs
 
     # Honeypot port — publicly accessible
-    # Exposed on all interfaces so ngrok/direct internet traffic can reach it.
+    # Exposed on all interfaces so direct internet traffic can reach it.
     ports:
       - "0.0.0.0:${FLASK_HTTP_PORT}:8080"
 
@@ -302,9 +302,9 @@ services:
       - ADMIN_USERNAME=${ADMIN_USERNAME}
       - ADMIN_EMAIL=${ADMIN_EMAIL}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
-      # Must match the host project name so 'docker compose up' from inside the
-      # container joins the existing stack instead of creating a new network.
-      - COMPOSE_PROJECT_NAME=honeypot-project
+      # Must match the host compose project name so in-container compose commands
+      # target the running stack instead of creating a second project.
+      - COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-honeypotproject}
 
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
@@ -325,41 +325,3 @@ services:
         limits:
           memory: 256M
 
-  # ============================================
-  # NGROK — INTERNET EXPOSURE (optional, WSL2 only)
-  # Only starts when the "expose" profile is active.
-  #   make expose            → start tunnels
-  #   make tunnel-status     → show public URLs
-  #
-  # NOT needed on a cloud VPS (direct public IP).
-  # Requires NGROK_AUTHTOKEN in .env
-  # ============================================
-  ngrok:
-    image: ngrok/ngrok:latest
-    profiles: ["expose"]
-    restart: unless-stopped
-
-    environment:
-      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN}
-
-    command: >
-      start --all
-      --config /etc/ngrok.yml
-      --authtoken ${NGROK_AUTHTOKEN}
-
-    volumes:
-      - ./ngrok.yml:/etc/ngrok.yml:ro
-
-    ports:
-      - "127.0.0.1:4040:4040"   # ngrok web inspector — localhost only
-
-    networks:
-      - honeypot-network
-
-    depends_on:
-      - flask
-
-    deploy:
-      resources:
-        limits:
-          memory: 128M

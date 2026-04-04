@@ -24,7 +24,7 @@ An automated, containerised honeypot deployment and threat intelligence system b
 
 ```
 ┌────────────────────────────────────────────────────────────────┐
-│                      Docker Network  172.25.0.0/16             │
+│               Docker Network (SUBNET from .env)                │
 │                                                                  │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐ │
 │  │   Cowrie    │  │  Dionaea    │  │     Flask Honeypot      │ │
@@ -115,7 +115,7 @@ The dashboard is now protected by login and access control. Initial credentials 
 
 After first login, navigate to **Admin > User Management** to create additional user accounts.
 
-Non-admin users can view monitoring data, but only admins can call deployment APIs and manage other users.
+Non-admin users can view monitoring data, but only admins can call deployment APIs, view raw service logs, and access sensitive credential-intel analytics.
 
 Then proceed with:
 
@@ -309,6 +309,9 @@ COWRIE_SSH_PORT=2222
 COWRIE_TELNET_PORT=2323
 FLASK_HTTP_PORT=18080
 
+# Compose project label (must stay consistent across host/container)
+COMPOSE_PROJECT_NAME=honeypotproject
+
 # Auto-remap conflicted host ports during deployment
 AUTO_REMAP_PORTS_ON_CONFLICT=0
 
@@ -376,10 +379,10 @@ This adds `geoip.country_name`, `geoip.city_name`, `geoip.latitude`, `geoip.long
 | Attack timeline (24 h) | ES date histogram → Recharts AreaChart |
 | World attack map | react-leaflet with colour-coded circle markers per honeypot type |
 | Top countries | ES terms aggregation → horizontal BarChart |
-| Top usernames / passwords | ES terms aggregation → horizontal BarChart |
-| Top shell commands | ES terms aggregation → horizontal BarChart |
+| Top usernames / passwords | ES terms aggregation → horizontal BarChart (admin only) |
+| Top shell commands | ES terms aggregation → horizontal BarChart (admin only) |
 | Recent attacks table | ES search, client-side sort + filter + pagination |
-| Service logs viewer | Docker container log API with download button |
+| Service logs viewer | Docker container log API with download button (admin only) |
 | Deploy / shutdown controls | Flask API → `docker compose` subprocess |
 | Toast notifications | React `forwardRef` / `useImperativeHandle` system |
 

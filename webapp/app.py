@@ -359,6 +359,21 @@ def _timeline_from_db(limit_hours=24):
     return [{'key_as_string': k, 'doc_count': v} for k, v in sorted_items]
 
 
+def _redact_attack_rows(attacks):
+    """Hide sensitive attack payload fields from non-admin viewers."""
+    if session.get('role') == 'admin':
+        return attacks
+
+    redacted = []
+    for attack in attacks:
+        item = dict(attack)
+        item['username'] = None
+        item['password'] = None
+        item['input'] = None
+        redacted.append(item)
+    return redacted
+
+
 def _detect_compose_cmd() -> list:
     """Return ['docker', 'compose'] if the v2 plugin is available, else ['docker-compose']."""
     for cmd in (['docker', 'compose'], ['docker-compose']):
@@ -610,18 +625,76 @@ def _run_compose_action(action, timeout=180):
         'remapped': remapped_total,
     }
 
+
+def _compose_project_candidates():
+    """Return likely Docker Compose project names for this stack.
+
+    This keeps status/deploy APIs resilient when the running stack project label
+    differs from the configured COMPOSE_PROJECT_NAME (common on cloud hosts).
+    """
+    candidates = []
+
+    configured = os.environ.get('COMPOSE_PROJECT_NAME', '').strip()
+    if configured:
+        candidates.append(configured)
+
+    for fallback in ('honeypotproject', 'honeypot-project'):
+        if fallback not in candidates:
+            candidates.append(fallback)
+
+    try:
+        webapp_containers = docker_client.containers.list(
+            all=True,
+            filters={'label': 'com.docker.compose.service=webapp'},
+        )
+        for container in webapp_containers:
+            detected = container.labels.get('com.docker.compose.project')
+            if detected and detected not in candidates:
+                candidates.insert(0, detected)
+    except Exception:
+        pass
+
+    return candidates
+
+
+def _pick_container(containers):
+    """Prefer running containers, otherwise return the first available."""
+    if not containers:
+        return None
+    for container in containers:
+        if container.status == 'running':
+            return container
+    return containers[0]
+
 def _get_docker_container(service_name):
     """Logically discover the container using Docker Compose labels instead of brittle fixed names."""
     if not docker_client:
         raise RuntimeError("Docker client unavailable")
-    
-    # Check by label first: safe, scalable, prevents naming conflicts
-    project_name = os.environ.get('COMPOSE_PROJECT_NAME', 'honeypot-project')
-    filters = {'label': [f'com.docker.compose.project={project_name}', f'com.docker.compose.service={service_name}']}
-    containers = docker_client.containers.list(filters=filters)
+
+    service_label = f'com.docker.compose.service={service_name}'
+
+    # First try strict project+service matches across likely project names.
+    for project_name in _compose_project_candidates():
+        filters = {
+            'label': [
+                f'com.docker.compose.project={project_name}',
+                service_label,
+            ]
+        }
+        container = _pick_container(docker_client.containers.list(all=True, filters=filters))
+        if container:
+            return container
+
+    # Fallback: service label only (handles unexpected project names).
+    containers = docker_client.containers.list(all=True, filters={'label': service_label})
     if containers:
-        return containers[0]
-        
+        projects = _compose_project_candidates()
+        for project_name in projects:
+            for container in containers:
+                if container.labels.get('com.docker.compose.project') == project_name:
+                    return container
+        return _pick_container(containers)
+
     raise docker.errors.NotFound(f"Container for {service_name} not found")
 
 
@@ -910,6 +983,7 @@ def get_status():
     for service in SERVICES_LIST:
         try:
             container = _get_docker_container(service)
+            container.reload()
             containers[service] = {
                 'status': container.status,
                 'health': container.attrs.get('State', {}).get('Health', {}).get('Status', 'none'),
@@ -939,6 +1013,7 @@ def deploy_service(service):
         action = ['up', '-d', service]
         try:
             container = _get_docker_container(service)
+            container.reload()
             if container.status == 'running':
                 action = ['restart', service]
         except docker.errors.NotFound:
@@ -999,9 +1074,9 @@ def shutdown():
 # ─────────────────────────────────────────
 
 @app.route('/api/logs/<service>')
-@login_required
+@admin_required
 def get_logs(service):
-    """Return last 200 log lines for a container."""
+    """Return last 200 log lines for a container (admin only)."""
     if service not in SERVICES_LIST:
         return jsonify({'error': f'Unknown service: {service}'}), 400
     try:
@@ -1146,19 +1221,22 @@ def get_recent_attacks():
                 src['id'] = h.get('_id')
                 attacks.append(src)
             if attacks:  # If we got data from ES, return it
-                return jsonify({'attacks': attacks, 'count': len(attacks), 'source': 'elasticsearch'})
+                redacted = _redact_attack_rows(attacks)
+                return jsonify({'attacks': redacted, 'count': len(redacted), 'source': 'elasticsearch'})
         
         # Fallback to SQLite database
         print("⚠️ Elasticsearch unavailable, falling back to SQLite database")
         attacks = get_attacks_from_db(limit=limit)
-        return jsonify({'attacks': attacks, 'count': len(attacks), 'source': 'sqlite'})
+        redacted = _redact_attack_rows(attacks)
+        return jsonify({'attacks': redacted, 'count': len(redacted), 'source': 'sqlite'})
         
     except Exception as e:
         # Final fallback to SQLite
         print(f"❌ Error querying Elasticsearch: {e}, using SQLite fallback")
         try:
             attacks = get_attacks_from_db(limit=limit)
-            return jsonify({'attacks': attacks, 'count': len(attacks), 'source': 'sqlite', 'error': str(e)})
+            redacted = _redact_attack_rows(attacks)
+            return jsonify({'attacks': redacted, 'count': len(redacted), 'source': 'sqlite', 'error': str(e)})
         except Exception as db_e:
             return jsonify({'attacks': [], 'count': 0, 'error': f'ES: {str(e)}, DB: {str(db_e)}'})
 
@@ -1184,7 +1262,7 @@ def delete_attack(attack_id):
 
 
 @app.route('/api/attacks/all')
-@login_required
+@admin_required
 def get_all_attacks():
     """Return all attacks across honeypots (Elasticsearch first, SQLite fallback)."""
     try:
@@ -1222,7 +1300,7 @@ def get_all_attacks():
 
 
 @app.route('/api/attacks/top-credentials')
-@login_required
+@admin_required
 def get_top_credentials():
     """Top usernames, passwords, and username:password combos attempted."""
     try:
@@ -1258,7 +1336,7 @@ def get_top_credentials():
 
 
 @app.route('/api/attacks/top-commands')
-@login_required
+@admin_required
 def get_top_commands():
     """Top shell commands executed in SSH honeypot."""
     try:

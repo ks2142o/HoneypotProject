@@ -200,6 +200,7 @@ ES_JAVA_OPTS=-Xms512m -Xmx512m
 LS_JAVA_OPTS=-Xms256m -Xmx256m
 
 # ── Docker network ────────────────────────────────────────────────────────────
+COMPOSE_PROJECT_NAME=honeypotproject
 NETWORK_NAME=honeypot-network
 SUBNET=172.30.250.0/24
 
@@ -225,9 +226,6 @@ FLASK_HTTP_PORT=18080
 # Automatically remap conflicted host ports during dashboard deployment actions.
 # Set to 0 if you prefer strict failure over auto-remediation.
 AUTO_REMAP_PORTS_ON_CONFLICT=0
-
-# ── ngrok (WSL2 internet exposure — not needed on cloud VPS) ─────────────────
-NGROK_AUTHTOKEN=
 
 # ── Timezone & app settings ───────────────────────────────────────────────────
 TZ=UTC

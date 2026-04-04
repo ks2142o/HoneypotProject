@@ -4,7 +4,7 @@ import os
 from flask import Flask, request, jsonify
 
 app = Flask(__name__)
-# Trust the X-Forwarded-For header set by ngrok / reverse proxies
+# Trust the X-Forwarded-For header set by reverse proxies
 app.config['TRUSTED_PROXIES'] = 1
 
 os.makedirs("/app/logs", exist_ok=True)
@@ -22,8 +22,8 @@ logging.basicConfig(
 def _real_ip() -> str:
     """Return the real client IP.
 
-    When running behind ngrok (HTTP tunnel) the actual attacker IP is in
-    X-Forwarded-For.  We take the leftmost value (original client) and
+    When running behind a reverse proxy the actual client IP is in
+    X-Forwarded-For. We take the leftmost value (original client) and
     fall back to remote_addr when the header is absent (direct connections).
     """
     xff = request.headers.get("X-Forwarded-For", "")

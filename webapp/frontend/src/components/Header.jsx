@@ -10,7 +10,22 @@ const HealthDot = ({ label, value }) => {
   )
 }
 
-export default function Header({ user, isAdmin, health, isRefreshing, adminView, setAdminView, onRefresh, onDeployAll, onShutdown, onLogout }) {
+export default function Header({
+  user,
+  isAdmin,
+  health,
+  isRefreshing,
+  runningCount,
+  totalServices,
+  adminView,
+  setAdminView,
+  onRefresh,
+  onDeployAll,
+  onShutdown,
+  onLogout,
+}) {
+  const showRecover = isAdmin && (!totalServices || runningCount < totalServices)
+
   return (
     <header
       className="sticky top-0 z-50 border-b border-cyber-border/60 backdrop-blur-md"
@@ -92,14 +107,16 @@ export default function Header({ user, isAdmin, health, isRefreshing, adminView,
           <div className="flex items-center gap-1.5 sm:gap-2">
             {isAdmin && (
               <>
-                <button
-                  className="btn btn-success px-2.5 sm:px-4"
-                  onClick={() => { if (window.confirm('Start all stopped services?')) onDeployAll() }}
-                  title="Start all stopped services (admin only)"
-                >
-                  <Rocket size={14} />
-                  <span className="hidden sm:inline">Start</span>
-                </button>
+                {showRecover && (
+                  <button
+                    className="btn btn-success px-2.5 sm:px-4"
+                    onClick={() => { if (window.confirm('Start all stopped services?')) onDeployAll() }}
+                    title="Start all stopped services (admin only)"
+                  >
+                    <Rocket size={14} />
+                    <span className="hidden sm:inline">Recover</span>
+                  </button>
+                )}
 
                 <button
                   className="btn btn-danger px-2.5 sm:px-4"

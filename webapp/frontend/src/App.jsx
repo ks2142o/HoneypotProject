@@ -69,14 +69,24 @@ export default function App() {
   const loadStats  = useCallback(() => load(api.stats,    setStats),    [load])
   const loadHealth = useCallback(() => load(api.health,   setHealth),   [load])
 
-  const loadAnalytics = useCallback(() => Promise.all([
-    load(api.recentAttacks,  setAttacks),
-    load(api.topCredentials, setCredentials),
-    load(api.topCommands,    setCommands),
-    load(api.byCountry,      setCountries),
-    load(api.timeline,       setTimeline),
-    load(api.geoPoints,      setGeoPoints),
-  ]), [load])
+  const loadAnalytics = useCallback(() => {
+    const tasks = [
+      load(api.recentAttacks, setAttacks),
+      load(api.byCountry, setCountries),
+      load(api.timeline, setTimeline),
+      load(api.geoPoints, setGeoPoints),
+    ]
+
+    if (isAdmin) {
+      tasks.push(load(api.topCredentials, setCredentials))
+      tasks.push(load(api.topCommands, setCommands))
+    } else {
+      setCredentials({ top_usernames: [], top_passwords: [] })
+      setCommands({ top_commands: [] })
+    }
+
+    return Promise.all(tasks)
+  }, [load, isAdmin])
 
   const refreshAll = useCallback(async () => {
     setRefreshing(true)
@@ -108,14 +118,6 @@ export default function App() {
       notify('Services started successfully', 'success')
       setTimeout(refreshAll, 5000)
     } catch (e) { notify(`Deploy failed: ${e.message}`, 'error') }
-  }
-
-  const handleDeployService = async (svc) => {
-    try {
-      await api.deployService(svc)
-      notify(`${svc} started`, 'success')
-      setTimeout(loadStatus, 2000)
-    } catch (e) { notify(`${svc}: ${e.message}`, 'error') }
   }
 
   const handleShutdown = async () => {
@@ -165,6 +167,8 @@ export default function App() {
         isAdmin={isAdmin}
         health={health}
         isRefreshing={isRefreshing}
+        runningCount={runningCount}
+        totalServices={Object.keys(status).length}
         adminView={adminView}
         setAdminView={setAdminView}
         onRefresh={refreshAll}
@@ -193,15 +197,10 @@ export default function App() {
         {/* Service status + control panel */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
           <div className="lg:col-span-2">
-            <ServiceStatus
-              status={status}
-              onDeploy={handleDeployService}
-              isAdmin={isAdmin}
-            />
+            <ServiceStatus status={status} />
           </div>
           <ControlPanel
             health={health}
-            onDeployAll={handleDeployAll}
             isAdmin={isAdmin}
           />
         </div>
@@ -216,13 +215,18 @@ export default function App() {
           usernames={credentials.top_usernames || []}
           passwords={credentials.top_passwords || []}
           commands={commands.top_commands || []}
+          isAdmin={isAdmin}
         />
 
         {/* Recent attacks */}
-        <AttacksTable attacks={attacks.attacks || []} onRefresh={() => load(api.recentAttacks, setAttacks)} />
+        <AttacksTable
+          attacks={attacks.attacks || []}
+          onRefresh={() => load(api.recentAttacks, setAttacks)}
+          isAdmin={isAdmin}
+        />
 
         {/* Logs */}
-        <LogsViewer notify={notify} />
+        {isAdmin && <LogsViewer notify={notify} />}
       </>
         )}
       </main>

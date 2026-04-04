@@ -1,4 +1,4 @@
-import { Play, RotateCcw, Network, Database, GitMerge, BarChart2, Terminal, Bug, Globe, Monitor, Box } from 'lucide-react'
+import { Network, Database, GitMerge, BarChart2, Terminal, Bug, Globe, Monitor, Box } from 'lucide-react'
 
 const SERVICE_META = {
   elasticsearch: { label: 'Elasticsearch', icon: Database,  group: 'elk'      },
@@ -10,7 +10,7 @@ const SERVICE_META = {
   webapp:        { label: 'Dashboard',     icon: Monitor,   group: 'other'    },
 }
 
-function ServiceCard({ name, info, onDeploy, isAdmin }) {
+function ServiceCard({ name, info }) {
   const running  = info.status === 'running'
   const meta     = SERVICE_META[name] ?? { label: name, icon: Box, group: 'other' }
   const Icon     = meta.icon
@@ -65,31 +65,11 @@ function ServiceCard({ name, info, onDeploy, isAdmin }) {
         </p>
       )}
 
-      {/* Action button — pinned to bottom of card */}
-      <button
-        disabled={!isAdmin}
-        className={`mt-auto pt-3 w-full text-[11px] py-1.5 rounded-lg border
-                    transition-all duration-200 flex items-center justify-center gap-1.5 font-bold uppercase tracking-wider
-                    ${!isAdmin
-                      ? 'bg-gray-700/20 border-gray-600/20 text-gray-500 cursor-not-allowed'
-                      : running
-                      ? 'bg-cyber-yellow/10 border-cyber-yellow/30 text-cyber-yellow hover:bg-cyber-yellow/20 hover:shadow-[0_0_10px_rgba(255,191,0,0.3)]'
-                      : 'bg-cyber-green/10 border-cyber-green/30 text-cyber-green hover:bg-cyber-green/20 hover:shadow-[0_0_10px_rgba(0,255,128,0.3)]'}`}
-        onClick={() => {
-          if (!isAdmin) return;
-          if (running && !window.confirm(`Restart ${meta.label}?`)) return;
-          onDeploy(name);
-        }}
-        title={isAdmin ? undefined : 'Admin only'}
-      >
-        {running ? <RotateCcw size={11} /> : <Play size={11} />}
-        {running ? 'Restart' : 'Start'}
-      </button>
     </div>
   )
 }
 
-export default function ServiceStatus({ status, onDeploy, isAdmin }) {
+export default function ServiceStatus({ status }) {
   const entries = Object.entries(status)
 
   return (
@@ -108,7 +88,7 @@ export default function ServiceStatus({ status, onDeploy, isAdmin }) {
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
           {entries.map(([name, info]) => (
-            <ServiceCard key={name} name={name} info={info} onDeploy={onDeploy} isAdmin={isAdmin} />
+            <ServiceCard key={name} name={name} info={info} />
           ))}
         </div>
       )}

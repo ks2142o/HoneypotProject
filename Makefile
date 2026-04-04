@@ -9,6 +9,7 @@
 COMPOSE_FILE   := docker-compose.yml
 PROJECT_DIR    := $(shell pwd)
 ENV_FILE       := .env
+ENV_TEMPLATE   := .env.example
 DEPLOY_SCRIPT  := deploy.py
 FRONTEND_DIR   := webapp/frontend
 PORT_FIX_SCRIPT := scripts/resolve_port_conflicts.py
@@ -146,7 +147,7 @@ cloud-setup: ## Prepare a cloud VM (Oracle/AWS/GCP) for deployment — run once 
 	@sudo sysctl -w vm.max_map_count=262144 > /dev/null
 	@# 2. Create .env from example if missing
 	@if [ ! -f "$(ENV_FILE)" ]; then \
-	  cp .env.example .env; \
+	  cp "$(ENV_TEMPLATE)" "$(ENV_FILE)"; \
 	  $(call warn, .env created from .env.example — update passwords before deploying!); \
 	else \
 	  $(call ok, .env already exists); \
@@ -169,11 +170,14 @@ cloud-setup: ## Prepare a cloud VM (Oracle/AWS/GCP) for deployment — run once 
 .PHONY: env
 env: ## Create .env file from template if it does not exist
 	$(call log, Checking environment file…)
-	@if [ ! -f "$(ENV_FILE)" ]; then \
-	  cp .env.example .env 2>/dev/null || python3 $(DEPLOY_SCRIPT) --mode=status --force 2>/dev/null || true; \
-	  $(call ok, .env created — please review and update passwords!); \
+	@if [ -f "$(ENV_FILE)" ]; then \
+	  $(call ok, .env already exists — keeping your current values); \
+	elif [ -f "$(ENV_TEMPLATE)" ]; then \
+	  cp "$(ENV_TEMPLATE)" "$(ENV_FILE)"; \
+	  $(call warn, .env created from .env.example — review and update secrets before deploy!); \
 	else \
-	  $(call ok, .env already exists); \
+	  $(call err, .env.example not found — cannot initialize .env); \
+	  exit 1; \
 	fi
 
 .PHONY: dirs
@@ -194,13 +198,13 @@ setup: check-deps vm-fix env dirs ## Full first-time setup (deps + kernel + env 
 	@$(call ok, Setup complete — run 'make deploy' to start the platform)
 
 .PHONY: fix-ports
-fix-ports: ## Auto-remap conflicted host ports in .env
+fix-ports: env ## Auto-remap conflicted host ports in .env
 	$(call log, Resolving host port conflicts from .env…)
 	@python3 $(PORT_FIX_SCRIPT) --env-file $(ENV_FILE)
 	@$(call ok, Port conflict scan complete)
 
 .PHONY: fix-network
-fix-network: ## Resolve Docker bridge subnet overlap for .env SUBNET
+fix-network: env ## Resolve Docker bridge subnet overlap for .env SUBNET
 	$(call log, Resolving Docker subnet overlaps from .env…)
 	@python3 $(NETWORK_FIX_SCRIPT) --env-file $(ENV_FILE)
 	@$(call ok, Network subnet scan complete)
@@ -279,40 +283,6 @@ deploy-webapp: build-webapp ## Build and deploy the management webapp only
 	@$(MAKE) --no-print-directory fix-ports
 	@$(DOCKER_COMPOSE) -f $(COMPOSE_FILE) up -d webapp
 	@$(call ok, Webapp deployed at http://localhost:$(WEBAPP_PORT))
-
-.PHONY: expose
-expose: ## Start ngrok tunnels to expose honeypots to the internet (requires NGROK_AUTHTOKEN in .env)
-	$(call log, Starting ngrok tunnels…)
-	@if ! grep -q "^NGROK_AUTHTOKEN=.\+" $(ENV_FILE) 2>/dev/null; then \
-	  echo ""; \
-	  echo "  ✗ NGROK_AUTHTOKEN is not set in .env"; \
-	  echo ""; \
-	  echo "  1. Sign up free at https://dashboard.ngrok.com"; \
-	  echo "  2. Copy your authtoken from: Dashboard → Your Authtoken"; \
-	  echo "  3. Add it to .env:  NGROK_AUTHTOKEN=<your_token>"; \
-	  echo "  4. Re-run: make expose"; \
-	  echo ""; \
-	  exit 1; \
-	fi
-	@$(DOCKER_COMPOSE) -f $(COMPOSE_FILE) --profile expose up -d ngrok
-	@$(call ok, ngrok tunnels started — run 'make tunnel-status' to see public URLs)
-
-.PHONY: tunnel-status
-tunnel-status: ## Show active ngrok tunnel URLs (public internet addresses)
-	$(call log, Fetching ngrok tunnel info…)
-	@result=$$(curl -sf http://localhost:4040/api/tunnels 2>/dev/null); \
-	  if [ -z "$$result" ]; then \
-	    echo "  ngrok is not running — start with: make expose"; \
-	  else \
-	    echo "$$result" | python3 -c \
-	      "import sys,json; t=json.load(sys.stdin).get('tunnels',[]); [print(f'  {x[\"name\"]:<20} {x[\"public_url\"]}') for x in t] if t else print('  No tunnels open yet')"; \
-	  fi
-
-.PHONY: stop-expose
-stop-expose: ## Stop ngrok tunnels only (honeypots keep running)
-	$(call log, Stopping ngrok tunnels…)
-	@$(DOCKER_COMPOSE) -f $(COMPOSE_FILE) --profile expose stop ngrok
-	@$(call ok, Tunnels stopped)
 
 .PHONY: start-%
 start-%: ## Start a specific service: make start-elasticsearch
@@ -482,7 +452,7 @@ purge-images: purge ## DESTRUCTIVE: purge + remove all built images
 # ==============================================================================
 
 .PHONY: test
- test: ## Run all system tests (health, ES connectivity, honeypot ports, auth)
+test: ## Run all system tests (health, ES connectivity, honeypot ports, auth)
 	$(call log, Running system test suite…)
 	@$(MAKE) --no-print-directory test-health
 	@$(MAKE) --no-print-directory test-ports
@@ -503,7 +473,6 @@ test-health: ## Test HTTP health endpoints
 	   fi; \
 	 }; \
 	 check "Webapp /api/health"       "http://localhost:$(WEBAPP_PORT)/api/health"; \
-	 check "Webapp /api/auth/me"      "http://localhost:$(WEBAPP_PORT)/api/auth/me"; \
 	 check "Elasticsearch /_cluster"  "http://localhost:$(ELASTICSEARCH_PORT)/_cluster/health"; \
 	 check "Kibana /api/status"       "http://localhost:$(KIBANA_PORT)/api/status"; \
 	 check "Flask Honeypot /health"   "http://localhost:$(FLASK_HTTP_PORT)/health"; \
@@ -514,7 +483,7 @@ test-auth: ## Test basic authentication (login + /api/auth/me)
 	$(call log, Auth endpoint tests…)
 	@ADMIN_USERNAME=$$(grep -E '^ADMIN_USERNAME=' $(ENV_FILE) 2>/dev/null | cut -d= -f2 | tr -d ' \t' || echo 'admin'); \
 	ADMIN_PASSWORD=$$(grep -E '^ADMIN_PASSWORD=' $(ENV_FILE) 2>/dev/null | cut -d= -f2 | tr -d ' \t' || echo 'admin'); \
-	payload=$$(python3 -c "import json, os; print(json.dumps({'username': os.environ['ADMIN_USERNAME'], 'password': os.environ['ADMIN_PASSWORD']}))"); \
+	payload=$$(python3 -c "import json, sys; print(json.dumps({'username': sys.argv[1], 'password': sys.argv[2]}))" "$$ADMIN_USERNAME" "$$ADMIN_PASSWORD"); \
 	printf "  Testing login……"; \
 	login=$$(curl -sf -c /tmp/honeypot-cookies.txt -X POST "http://localhost:$(WEBAPP_PORT)/api/auth/login" -H "Content-Type: application/json" -d "$$payload" 2>/dev/null); \
 	if echo "$$login" | grep -q '"user"'; then \
@@ -560,7 +529,7 @@ test-es: ## Test Elasticsearch index creation and document ingestion pipeline
 test-ssh: ## Test Cowrie SSH honeypot responds on port 2222
 	$(call log, Testing Cowrie SSH honeypot…)
 	@timeout 5 ssh -o StrictHostKeyChecking=no -o ConnectTimeout=3 \
-	  -p 2222 root@localhost 2>&1 | head -2 \
+	  -p $(COWRIE_SSH_PORT) root@localhost 2>&1 | head -2 \
 	  && $(call ok, Cowrie SSH is responding) \
 	  || $(call warn, Cowrie SSH did not respond — may not be running)
 
