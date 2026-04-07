@@ -1057,35 +1057,6 @@ def deploy_all():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
-@app.route('/api/shutdown', methods=['POST'])
-@admin_required
-def shutdown():
-    """Stop all services.
-
-    Disabled by default for operational safety. To re-enable explicitly, set:
-      ENABLE_DANGEROUS_SHUTDOWN=1
-    """
-    if not _is_truthy(os.environ.get('ENABLE_DANGEROUS_SHUTDOWN', '0')):
-        return jsonify({
-            'success': False,
-            'error': 'Shutdown endpoint is disabled by policy (ENABLE_DANGEROUS_SHUTDOWN=0)'
-        }), 403
-
-    try:
-        result = subprocess.run(
-            COMPOSE_CMD + ['down'],
-            cwd=PROJECT_PATH,
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
-        if result.returncode == 0:
-            return jsonify({'success': True, 'message': 'All services stopped'})
-        return jsonify({'success': False, 'error': result.stderr}), 500
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-
 # ─────────────────────────────────────────
 # Logs
 # ─────────────────────────────────────────
