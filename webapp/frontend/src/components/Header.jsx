@@ -1,4 +1,4 @@
-import { RefreshCw, Shield, Rocket, StopCircle, LogOut } from 'lucide-react'
+import { RefreshCw, Shield, Rocket, LogOut } from 'lucide-react'
 
 const HealthDot = ({ label, value }) => {
   const ok = ['healthy', 'green', 'yellow'].includes(String(value).toLowerCase())
@@ -21,7 +21,6 @@ export default function Header({
   setAdminView,
   onRefresh,
   onDeployAll,
-  onShutdown,
   onLogout,
 }) {
   const showRecover = isAdmin && (!totalServices || runningCount < totalServices)
@@ -41,8 +40,11 @@ export default function Header({
           </div>
           <div className="min-w-0">
             <h1 className="text-sm sm:text-base font-bold text-cyber-bright tracking-wide leading-none truncate">
-              HONEYPOT <span className="hidden sm:inline">PLATFORM</span>
+              SENTINEL <span className="hidden sm:inline">SECURITY CONSOLE</span>
             </h1>
+            <p className="hidden sm:block text-[10px] text-cyber-muted mt-1 font-mono tracking-wide">
+              Research Threat Intelligence Platform
+            </p>
           </div>
         </div>
 
@@ -76,6 +78,10 @@ export default function Header({
           <div className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-cyber-green animate-pulse-slow shadow-glow-green" />
             <span className="hidden sm:inline text-xs text-cyber-muted font-mono tracking-widest">LIVE</span>
+          </div>
+
+          <div className="hidden md:flex items-center rounded-md border border-cyber-border bg-cyber-card2 px-2.5 py-1 text-[11px] font-mono text-cyber-muted">
+            {runningCount}/{totalServices || 0} services online
           </div>
 
           {/* Component health — hidden on mobile */}
@@ -117,15 +123,6 @@ export default function Header({
                     <span className="hidden sm:inline">Recover</span>
                   </button>
                 )}
-
-                <button
-                  className="btn btn-danger px-2.5 sm:px-4"
-                  onClick={() => { if (window.confirm('Stop ALL services? Confirm?')) onShutdown() }}
-                  title="Shutdown all services (admin only)"
-                >
-                  <StopCircle size={14} />
-                  <span className="hidden sm:inline">Shutdown</span>
-                </button>
               </>
             )}
 

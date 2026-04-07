@@ -259,7 +259,6 @@
       <!-- Controls -->
       <div class="flex gap-2">
         <button class="btn btn-success" onclick="deployAll()"><i class="fas fa-rocket"></i> Deploy All</button>
-        <button class="btn btn-danger"  onclick="shutdownAll()"><i class="fas fa-stop-circle"></i> Shutdown</button>
         <button class="btn btn-primary" onclick="refreshAll()"><i class="fas fa-sync-alt" id="refresh-icon"></i> Refresh</button>
       </div>
     </div>
@@ -830,15 +829,6 @@ async function deployService(svc, ev) {
     notify(data.message || `${svc} started`, 'success');
     setTimeout(loadStatus, 2000);
   } catch(e) { notify(`${svc}: ${e.message}`, 'error'); }
-}
-
-async function shutdownAll() {
-  if (!confirm('WARNING: This will stop ALL services. Confirm?')) return;
-  try {
-    const data = await apiFetch('/api/shutdown', { method: 'POST' });
-    notify(data.message || 'All services stopped', 'success');
-    setTimeout(loadStatus, 2000);
-  } catch(e) { notify('Shutdown failed: ' + e.message, 'error'); }
 }
 
 // ─── Bootstrap ──────────────────────────────────────────────────────────────

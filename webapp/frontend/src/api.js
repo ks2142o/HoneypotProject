@@ -98,6 +98,5 @@ export const api = {
 
   deployAll:      () => post('/api/deploy/all'),
   deployService: (s)  => post(`/api/deploy/${s}`),
-  shutdown:       () => post('/api/shutdown'),
   deleteAttack:   (id) => del(`/api/attacks/${id}`),
 }

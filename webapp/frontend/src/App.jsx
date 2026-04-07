@@ -120,14 +120,6 @@ export default function App() {
     } catch (e) { notify(`Deploy failed: ${e.message}`, 'error') }
   }
 
-  const handleShutdown = async () => {
-    try {
-      await api.shutdown()
-      notify('All services stopped', 'success')
-      setTimeout(loadStatus, 2000)
-    } catch (e) { notify(`Shutdown failed: ${e.message}`, 'error') }
-  }
-
   /* ── derived values ──────────────────────────────────────── */
   const runningCount = Object.values(status).filter(s => s.status === 'running').length
   const topCountry   = countries.by_country?.[0]?.key ?? '—'
@@ -135,10 +127,17 @@ export default function App() {
   /* ── render: loading state ───────────────────────────────── */
   if (!authChecked) {
     return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-          <p className="text-gray-300">Loading...</p>
+      <div className="min-h-screen bg-cyber-bg relative overflow-hidden flex items-center justify-center p-4">
+        <div className="pointer-events-none absolute inset-0">
+          <div className="absolute -top-20 -left-24 w-72 h-72 rounded-full bg-cyber-accent/10 blur-3xl" />
+          <div className="absolute -bottom-24 -right-24 w-72 h-72 rounded-full bg-cyber-green/10 blur-3xl" />
+        </div>
+        <div className="relative rounded-2xl border border-cyber-border bg-cyber-card/95 px-8 py-7 shadow-cyber-lg text-center">
+          <div className="mx-auto mb-4 w-12 h-12 rounded-xl border border-cyber-accent/30 bg-cyber-accent/10 flex items-center justify-center">
+            <div className="w-5 h-5 border-2 border-cyber-accent/30 border-t-cyber-accent rounded-full animate-spin" />
+          </div>
+          <p className="text-cyber-bright font-semibold tracking-wide">Initializing Security Console</p>
+          <p className="text-cyber-muted text-xs mt-1 font-mono">Verifying session and loading telemetry</p>
         </div>
       </div>
     )
@@ -159,7 +158,11 @@ export default function App() {
 
   /* ── render: authenticated dashboard ─────────────────────── */
   return (
-    <div className="min-h-screen bg-cyber-bg">
+    <div className="min-h-screen bg-cyber-bg relative overflow-hidden">
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute -top-28 -left-24 w-80 h-80 rounded-full bg-cyber-accent/5 blur-3xl" />
+        <div className="absolute top-1/3 -right-24 w-96 h-96 rounded-full bg-cyber-green/5 blur-3xl" />
+      </div>
       <Notifications ref={notifRef} />
 
       <Header
@@ -173,7 +176,6 @@ export default function App() {
         setAdminView={setAdminView}
         onRefresh={refreshAll}
         onDeployAll={handleDeployAll}
-        onShutdown={handleShutdown}
         onLogout={handleLogout}
       />
 

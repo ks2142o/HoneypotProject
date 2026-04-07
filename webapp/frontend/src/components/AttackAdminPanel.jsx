@@ -4,7 +4,7 @@ import { RefreshCw, Search, Trash2, Download, Filter, Target } from 'lucide-reac
 
 const HONEYPOT_COLOR = {
   'cowrie-ssh': 'text-cyber-green',
-  'dionaea': 'text-cyber-blue',
+  'dionaea': 'text-cyber-red',
   'flask-http': 'text-cyber-accent'
 };
 
@@ -66,8 +66,14 @@ function AttackAdminPanel() {
         );
       }
 
-      setTotalPages(Math.ceil(allAttacks.length / PER_PAGE));
-      const start = (page - 1) * PER_PAGE;
+      const computedTotalPages = Math.max(1, Math.ceil(allAttacks.length / PER_PAGE));
+      setTotalPages(computedTotalPages);
+      const safePage = Math.min(page, computedTotalPages);
+      if (safePage !== page) {
+        setPage(safePage);
+      }
+
+      const start = (safePage - 1) * PER_PAGE;
       const paginated = allAttacks.slice(start, start + PER_PAGE);
       setAttacks(paginated);
     } catch (err) {
@@ -84,13 +90,13 @@ function AttackAdminPanel() {
       await api.deleteAttack(attackId);
       loadAttacks();
     } catch (err) {
-      alert('Delete failed: ' + err.message);
+      setError('Delete failed: ' + err.message);
     }
   };
 
   const exportCSV = () => {
     if (attacks.length === 0) {
-      alert('No data to export on this page.');
+      setError('No data to export on this page.');
       return;
     }
     const csv = [
