@@ -50,7 +50,7 @@ export default function Header({
 
         {/* Navigation Links */}
         {isAdmin && (
-          <div className="flex items-center gap-2 md:gap-4 mx-2">
+          <div className="flex items-center gap-1.5 md:gap-2 mx-2 p-1 rounded-lg border border-cyber-border bg-cyber-card2/70">
             {[
               { id: 'dashboard', label: 'Main Dashboard' },
               { id: 'attacks', label: 'Attack Database' },
@@ -59,10 +59,10 @@ export default function Header({
               <button
                 key={tab.id}
                 onClick={() => setAdminView(tab.id)}
-                className={`text-xs md:text-sm font-medium transition-colors ${
+                className={`text-xs md:text-sm font-medium transition-colors px-2.5 py-1.5 rounded-md border ${
                   adminView === tab.id
-                    ? 'text-cyber-accent border-b border-cyber-accent'
-                    : 'text-cyber-muted hover:text-cyber-bright'
+                    ? 'text-cyber-accent border-cyber-accent/40 bg-cyber-accent/10'
+                    : 'text-cyber-muted border-transparent hover:text-cyber-bright hover:border-cyber-border'
                 }`}
               >
                 {tab.label}
@@ -78,6 +78,10 @@ export default function Header({
           <div className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-cyber-green animate-pulse-slow shadow-glow-green" />
             <span className="hidden sm:inline text-xs text-cyber-muted font-mono tracking-widest">LIVE</span>
+          </div>
+
+          <div className="hidden xl:flex items-center rounded-md border border-cyber-green/30 bg-cyber-green/10 px-2.5 py-1 text-[11px] font-mono text-cyber-green">
+            Safe Mode
           </div>
 
           <div className="hidden md:flex items-center rounded-md border border-cyber-border bg-cyber-card2 px-2.5 py-1 text-[11px] font-mono text-cyber-muted">
@@ -96,7 +100,7 @@ export default function Header({
               <div className="flex items-center gap-2">
                 <div className="text-xs sm:text-sm text-cyber-muted hidden sm:block">
                   <div className="font-semibold text-cyber-bright">{user.username}</div>
-                  <div className="text-[10px] font-mono">{isAdmin ? 'Admin' : 'User'}</div>
+                  <div className="text-[10px] font-mono">{isAdmin ? 'Admin Operator' : 'Analyst User'}</div>
                 </div>
                 <button
                   className="btn btn-ghost px-2 sm:px-3"

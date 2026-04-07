@@ -707,8 +707,15 @@ def _get_docker_container(service_name):
 def serve_spa(path):
     """Serve React build; fall back to index.html for client-side routing."""
     if path and os.path.exists(os.path.join(app.static_folder, path)):
-        return send_from_directory(app.static_folder, path)
-    return send_from_directory(app.static_folder, 'index.html')
+        response = send_from_directory(app.static_folder, path)
+    else:
+        response = send_from_directory(app.static_folder, 'index.html')
+
+    # Avoid stale SPA assets in browsers/proxies after deployments.
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
 
 
 # ─────────────────────────────────────────
@@ -1053,7 +1060,17 @@ def deploy_all():
 @app.route('/api/shutdown', methods=['POST'])
 @admin_required
 def shutdown():
-    """Stop all services."""
+    """Stop all services.
+
+    Disabled by default for operational safety. To re-enable explicitly, set:
+      ENABLE_DANGEROUS_SHUTDOWN=1
+    """
+    if not _is_truthy(os.environ.get('ENABLE_DANGEROUS_SHUTDOWN', '0')):
+        return jsonify({
+            'success': False,
+            'error': 'Shutdown endpoint is disabled by policy (ENABLE_DANGEROUS_SHUTDOWN=0)'
+        }), 403
+
     try:
         result = subprocess.run(
             COMPOSE_CMD + ['down'],
